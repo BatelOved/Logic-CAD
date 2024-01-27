@@ -17,6 +17,5 @@
 !*.txt
 !*.v
 !*.pdf
-!*.json
 !*.rank
 !*.stat
