@@ -9,6 +9,160 @@ using namespace std;
 
 bool verbose = false;
 
+int getDeepestHierPropVal(hcmCell* cell) {
+  if (cell->getInstances().size() == 0) {
+    return 1;
+  }
+
+  int value = 0, tmpValue = 0;
+  std::map<std::string, hcmInstance*>::const_iterator iI;
+
+  for (iI = cell->getInstances().begin(); iI != cell->getInstances().end(); iI++) {
+    hcmCell* currCell = iI->second->masterCell();
+    tmpValue = getDeepestHierPropVal(currCell);
+    value = max(value, tmpValue);
+  }
+
+  return value+1;
+}
+
+int deepestReach(hcmCell* cell, hcmNode* node, set<string>* globalNodes) {
+  int value = 0, tmpValue = 0;
+  std::map<std::string, hcmInstPort*>::const_iterator ipI;
+
+  for (ipI = node->getInstPorts().begin(); ipI != node->getInstPorts().end(); ipI++) {
+    hcmCell* currCell = ipI->second->getInst()->masterCell();
+    hcmNode* currNode = currCell->getNode(ipI->second->getPort()->getName());
+
+    if (globalNodes->find(currNode->getName()) != globalNodes->end()) {
+      continue;
+    }
+
+    tmpValue = deepestReach(currCell, currNode, globalNodes);
+    value = max(value, tmpValue);
+  }
+
+  return value+1;
+}
+
+bool getVisitInitPropVal(hcmCell* cell) {
+  return false;
+}
+
+template <typename T>
+void setPropTree(hcmCell* cell, string PropName, T (*getPropVal)(hcmCell*)) {
+
+  assert(cell->setProp<T>(PropName, getPropVal(cell)) == OK);
+
+  std::map<std::string, hcmInstance*>::const_iterator iI;
+
+  for (iI = cell->getInstances().begin(); iI != cell->getInstances().end(); iI++) {
+    hcmCell* currCell = iI->second->masterCell();
+    setPropTree<T>(currCell, PropName, getPropVal);
+  }
+}
+
+template <typename T>
+void delPropTree(hcmCell* cell, string PropName) {
+
+  assert(cell->delProp<T>(PropName) == OK);
+
+  std::map<std::string, hcmInstance*>::const_iterator iI;
+
+  for (iI = cell->getInstances().begin(); iI != cell->getInstances().end(); iI++) {
+    hcmCell* currCell = iI->second->masterCell();
+    delPropTree<T>(currCell, PropName);
+  }
+}
+
+int cntInstByProp(hcmCell* cell, string cellName, string propName) {
+
+  bool value;
+  assert(cell->getProp<bool>(propName, value) == OK);
+
+  if (value == true) {
+    return 0;
+  }
+
+  if (cell->getInstances().size() == 0) {
+    return cellName.compare(cell->getName()) == 0 ? 1 : 0;
+  }
+  
+  int cnt = 0;
+  std::map<std::string, hcmInstance*>::const_iterator iI;
+
+  for (iI = cell->getInstances().begin(); iI != cell->getInstances().end(); iI++) {
+    hcmCell* currCell = iI->second->masterCell();
+    cnt += cntInstByProp(currCell, cellName, propName);
+    cell->setProp<bool>(propName, true);
+  }
+
+  return cnt;
+}
+
+int getCntInst(hcmCell* cell, string cellName) {
+  string propName = "visit";
+
+  setPropTree<bool>(cell, propName, getVisitInitPropVal);
+  int cnt = cntInstByProp(cell, cellName, propName);
+  delPropTree<bool>(cell, propName);
+
+  return cnt;
+}
+
+int getDeepestReach(hcmCell* cell, set<string>* globalNodes) {
+  string propName = "deepestReach";
+  std::map<std::string, hcmNode*>::const_iterator nI;
+  int deepest = 0;
+
+  for (nI = cell->getNodes().begin(); nI != cell->getNodes().end(); nI++) {
+    int deepestTmp = deepestReach(cell, nI->second, globalNodes);
+    deepest = max(deepest, deepestTmp);
+  }
+
+  return deepest;
+}
+
+void deepestReachNodesByProp(hcmCell* cell, string propName, list<string>* nodesList, string deepestNode, set<string>* globalNodes) {
+  std::map<std::string, hcmInstance*>::const_iterator iI;
+  std::map<std::string, hcmNode*>::const_iterator nI;
+
+  if (cell->getInstances().size() == 0) {
+    for (nI = cell->getNodes().begin(); nI != cell->getNodes().end(); nI++) {
+      if (globalNodes->find(nI->second->getName()) == globalNodes->end()) {
+        nodesList->push_back(deepestNode + "/" + nI->second->getName());
+      }
+    }
+    return;
+  }
+
+  int deepestVal = 0, currDeepestVal = 0;
+  assert(cell->getProp<int>(propName, deepestVal) == OK);
+
+  for (iI = cell->getInstances().begin(); iI != cell->getInstances().end(); iI++) {
+    hcmCell* currCell = iI->second->masterCell();
+
+    assert(currCell->getProp<int>(propName, currDeepestVal) == OK);
+
+    if (deepestVal != currDeepestVal+1) {
+      continue;
+    }
+
+    deepestReachNodesByProp(currCell, propName, nodesList, deepestNode + "/" + iI->second->getName(), globalNodes);
+  }
+}
+
+list<string> getDeepestHierNodesList(hcmCell* cell, set<string>* globalNodes) {
+  string propName = "deepestHier";
+  list<string> nodesList;
+
+  setPropTree<int>(cell, propName, getDeepestHierPropVal);
+  deepestReachNodesByProp(cell, propName, &nodesList, "", globalNodes);
+  delPropTree<int>(cell, propName);
+
+  nodesList.sort();
+  return nodesList;
+}
 
 int main(int argc, char **argv) {
   int argIdx = 1;
@@ -77,7 +231,7 @@ int main(int argc, char **argv) {
   /* assign your answer for section a to topLevelNodeCounter */
   int topLevelNodeCounter = 0;
   //---------------------------------------------------------------------------------//
-  //enter your code here 
+  topLevelNodeCounter = topCell->getNodes().size() - globalNodes.size();
   //---------------------------------------------------------------------------------//
 	fv << "a: " << topLevelNodeCounter << endl;
 
@@ -85,7 +239,7 @@ int main(int argc, char **argv) {
   /* assign your answer for section b to topLevelInstanceCounter */
   int topLevelInstanceCounter = 0;
   //---------------------------------------------------------------------------------//
-  //enter your code here 
+  topLevelInstanceCounter = topCell->getInstances().size();
   //---------------------------------------------------------------------------------//
 	fv << "b: " << topLevelInstanceCounter << endl;
 
@@ -93,7 +247,7 @@ int main(int argc, char **argv) {
   /* assign your answer for section c to cellNameFoldedCounter */
   int cellNameFoldedCounter = 0;
   //---------------------------------------------------------------------------------//
-  //enter your code here 
+  cellNameFoldedCounter = getCntInst(topCell, "and4");
   //---------------------------------------------------------------------------------//
 	fv << "c: " << cellNameFoldedCounter << endl;
 
@@ -101,7 +255,7 @@ int main(int argc, char **argv) {
   /* assign your answer for section d to cellNameFlatendCounter */
   int cellNameFlatendCounter = 0;
   //---------------------------------------------------------------------------------//
-  //enter your code here 
+  cellNameFlatendCounter = getCntInst(flatCell, "and4");
   //---------------------------------------------------------------------------------//
 	fv << "d: " << cellNameFlatendCounter << endl;
 
@@ -109,7 +263,7 @@ int main(int argc, char **argv) {
   /* assign your answer for section e to deepestReach */
   int deepestReach = 1;
   //---------------------------------------------------------------------------------//
-  //enter your code here 
+  deepestReach = getDeepestReach(topCell, &globalNodes);
   //---------------------------------------------------------------------------------//
 	fv << "e: " << deepestReach << endl;
 
@@ -117,7 +271,7 @@ int main(int argc, char **argv) {
   /* assign your answer for section f to listOfHierarchicalNameOfDeepestReachingNodes */
   list<string> listOfHierarchicalNameOfDeepestReachingNodes;
   //---------------------------------------------------------------------------------//
-  //enter your code here 
+  listOfHierarchicalNameOfDeepestReachingNodes = getDeepestHierNodesList(topCell, &globalNodes);
   //---------------------------------------------------------------------------------//
   for (auto it : listOfHierarchicalNameOfDeepestReachingNodes) {
     // erase the '/' in the beginning of the hierarchical name. 
