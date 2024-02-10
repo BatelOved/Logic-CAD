@@ -11,15 +11,42 @@ using namespace std;
 
 bool verbose = false;
 
-// ./gl_rank TopLevel1355 stdcell.v c1355high.v
-// ./gl_rank TopLevel2670 stdcell.v c2670high.v
+void globalNodesHandlerByProp(hcmInstPort* instPort, string inputSizePropName) {
+  size_t inputSize = 0;
+  hcmInstance* currInst = instPort->getInst();
+  std::map<std::string, hcmInstPort*>::const_iterator ipI1, ipI2;
 
-list<int> getRankInputListInitPropVal(hcmInstance* cell) {
+  assert(currInst->getProp<size_t>(inputSizePropName, inputSize) == OK);
+  assert(currInst->setProp<size_t>(inputSizePropName, inputSize-1) == OK);
+  if (inputSize != 1) return;
+
+  for (ipI1 = currInst->getInstPorts().begin(); ipI1 != currInst->getInstPorts().end(); ipI1++) {
+    if (ipI1->second->getPort()->getDirection() == OUT) {
+      for (ipI2 = ipI1->second->getNode()->getInstPorts().begin(); ipI2 != ipI1->second->getNode()->getInstPorts().end(); ipI2++) {
+        if (ipI2->second->getPort()->getDirection() == IN) {
+          globalNodesHandlerByProp(ipI2->second, inputSizePropName);
+        }
+      }
+    }
+  }
+}
+
+size_t getRankInputSizePropVal(hcmInstance* inst) {
+  size_t inputSize = 0;
+
+  for (auto port : inst->masterCell()->getPorts()) {
+    inputSize += port->getDirection() == IN;
+  }
+
+  return inputSize;
+}
+
+list<int> getRankInputListInitPropVal(hcmInstance* inst) {
   return list<int>();
 }
 
-int getRankInitPropVal(hcmInstance* cell) {
-  return 0;
+bool getVisitInitPropVal(hcmInstance* inst) {
+  return false;
 }
 
 template <typename T>
@@ -46,31 +73,40 @@ void delPropTree(hcmCell* cell, string PropName) {
   }
 }
 
-list<pair<int, hcmInstPort*>> flatTraverseNode(vector<pair<int, string>>& maxRankVector, pair<int, hcmInstPort*> instPortPair, set<string>* globalNodes, string rankPropName, string rankInputListPropName) {
+void globalNodesHandler(hcmCell* cell, set<string>* globalNodes, string inputSizePropName) {
+  list<hcmInstPort*> globalInstPort;
+  std::map<std::string, hcmInstPort*>::const_iterator ipI;
+  std::map<std::string, hcmNode*>::const_iterator nI;
+
+  for (nI = cell->getNodes().begin(); nI != cell->getNodes().end(); nI++) {
+    if (globalNodes->find(nI->second->getName()) != globalNodes->end()) {
+      for (ipI = nI->second->getInstPorts().begin(); ipI != nI->second->getInstPorts().end(); ipI++) {
+        if (ipI->second->getPort()->getDirection() == IN) {
+          globalInstPort.push_back(ipI->second);
+        }
+      }
+    }
+  }
+
+  for (auto ip : globalInstPort) {
+    globalNodesHandlerByProp(ip, inputSizePropName);
+  }
+}
+
+list<pair<int, hcmInstPort*>> flatTraverseNode(vector<pair<int, string>>& maxRankVector, pair<int, hcmInstPort*> instPortPair, string inputSizePropName, string rankInputListPropName) {
   list<pair<int, hcmInstPort*>> outputInstPortList;
 
-  // if (instPortPair.first == 0) { // debug
-  //   cout << "InstPort Name: " << instPortPair.second->getName() << " Rank: " << instPortPair.first << endl;
-  // }
-
   hcmInstance* currInst = instPortPair.second->getInst();
-  hcmCell* currCell = currInst->masterCell();
 
   list<int> rankInputList;
   
   assert(currInst->getProp<list<int>>(rankInputListPropName, rankInputList) == OK);
   rankInputList.push_back(instPortPair.first);
-
   assert(currInst->setProp<list<int>>(rankInputListPropName, rankInputList) == OK);
   
   size_t inputSize = 0;
 
-  for (auto port : currCell->getPorts()) {
-    // if (globalNodes->find(port->owner()->getName()) != globalNodes->end()) {
-    //   continue;
-    // }
-    inputSize += port->getDirection() == IN; // IN_OUT?
-  }
+  assert(currInst->getProp<size_t>(inputSizePropName, inputSize) == OK);
 
   if (rankInputList.size() == inputSize) {
     int maxRank = 0, currRank = 0;
@@ -78,7 +114,6 @@ list<pair<int, hcmInstPort*>> flatTraverseNode(vector<pair<int, string>>& maxRan
       currRank = it;
       maxRank = max(maxRank, currRank);
     }
-    assert(currInst->setProp<int>(rankPropName, maxRank) == OK);
 
     maxRankVector.push_back(pair<int, string>(maxRank, currInst->getName()));
 
@@ -93,20 +128,21 @@ list<pair<int, hcmInstPort*>> flatTraverseNode(vector<pair<int, string>>& maxRan
         }
       }
     }
+
   }
 
   return outputInstPortList;
 }
 
-vector<pair<int, string>> getMaxRankVectorByProp(hcmCell* cell, list<pair<int, hcmInstPort*>>* instPortList, set<string>* globalNodes, string rankPropName, string rankInputListPropName) {
+vector<pair<int, string>> getMaxRankVectorByProp(hcmCell* cell, list<pair<int, hcmInstPort*>>* instPortList, set<string>* globalNodes, string inputSizePropName, string rankInputListPropName) {
   vector<pair<int, string>> maxRankVector;
   list<pair<int, hcmInstPort*>> addedinstPortList;
 
   while(!(instPortList->empty())) {
-    pair<int, hcmInstPort*> currNodePair = instPortList->front();
+    pair<int, hcmInstPort*> currinstPortPair = instPortList->front();
     instPortList->pop_front();
 
-    addedinstPortList = flatTraverseNode(maxRankVector, currNodePair, globalNodes, rankPropName, rankInputListPropName);
+    addedinstPortList = flatTraverseNode(maxRankVector, currinstPortPair, inputSizePropName, rankInputListPropName);
 
     instPortList->splice(instPortList->end(), addedinstPortList);
   }
@@ -117,40 +153,28 @@ vector<pair<int, string>> getMaxRankVectorByProp(hcmCell* cell, list<pair<int, h
 }
 
 vector<pair<int, string>> getMaxRankVector(hcmCell* cell, set<string>* globalNodes) {
-  string rankPropName = "rank";
   string rankInputListPropName = "rankInputList";
+  string inputSizePropName = "inputSize";
   list<pair<int, hcmInstPort*>> instPortList;
-  setPropTree<int>(cell, rankPropName, getRankInitPropVal);
   setPropTree<list<int>>(cell, rankInputListPropName, getRankInputListInitPropVal);
+  setPropTree<size_t>(cell, inputSizePropName, getRankInputSizePropVal);
 
   std::map<std::string, hcmInstPort*>::const_iterator ipI;
-  std::map<std::string, hcmNode*>::const_iterator nI;
 
   for (auto pI : cell->getPorts()) {
     if (pI->getDirection() == IN) {
       for (ipI = pI->owner()->getInstPorts().begin(); ipI != pI->owner()->getInstPorts().end(); ipI++) {
-        if (globalNodes->find(pI->owner()->getName()) != globalNodes->end()) {
-          continue;
-        }
         instPortList.push_back(pair<int, hcmInstPort*>(0, ipI->second));
       }
     }
   }
 
-  // Global nodes handler
-  for (nI = cell->getNodes().begin(); nI != cell->getNodes().end(); nI++) {
-    if (globalNodes->find(nI->second->getName()) != globalNodes->end()) {
-      for (ipI = nI->second->getInstPorts().begin(); ipI != nI->second->getInstPorts().end(); ipI++) {
-        instPortList.push_back(pair<int, hcmInstPort*>(0, ipI->second));
-      }
-      
-    }
-  }
+  globalNodesHandler(cell, globalNodes, inputSizePropName);
 
-  vector<pair<int, string>> maxRankVector = getMaxRankVectorByProp(cell, &instPortList, globalNodes, rankPropName, rankInputListPropName);
+  vector<pair<int, string>> maxRankVector = getMaxRankVectorByProp(cell, &instPortList, globalNodes, inputSizePropName, rankInputListPropName);
 
-  delPropTree<int>(cell, rankPropName);
   delPropTree<list<int>>(cell, rankInputListPropName);
+  delPropTree<size_t>(cell, inputSizePropName);
 
   return maxRankVector;
 }
