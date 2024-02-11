@@ -11,6 +11,8 @@ using namespace std;
 
 bool verbose = false;
 
+#define GLOBAL_NODE_RANK (-1)
+
 size_t _getRankInputSizePropVal(hcmInstance* inst) {
   size_t inputSize = 0;
 
@@ -57,53 +59,6 @@ void _delInstPropTree(hcmCell* cell, string PropName) {
 }
 
 /**
- * Decrease by 1 instance property value - inputSize, for the connected instance to the provided instPort (which the global node were connected to it).
- * Instances which are only connected to global nodes will hop recursively to next instance ports, otherwise return.
-**/
-void _globalNodesHandlerByProp(hcmInstPort* instPort, string inputSizePropName) {
-  size_t inputSize = 0;
-  hcmInstance* currInst = instPort->getInst();
-  std::map<std::string, hcmInstPort*>::const_iterator ipI1, ipI2;
-
-  assert(currInst->getProp<size_t>(inputSizePropName, inputSize) == OK);
-  assert(currInst->setProp<size_t>(inputSizePropName, inputSize-1) == OK);
-  if (inputSize != 1) return;
-
-  // Instances which are only connected to global nodes - hop recursively to next instance ports
-  for (ipI1 = currInst->getInstPorts().begin(); ipI1 != currInst->getInstPorts().end(); ipI1++) {
-    if (ipI1->second->getPort()->getDirection() == OUT) {
-      for (ipI2 = ipI1->second->getNode()->getInstPorts().begin(); ipI2 != ipI1->second->getNode()->getInstPorts().end(); ipI2++) {
-        if (ipI2->second->getPort()->getDirection() == IN) {
-          _globalNodesHandlerByProp(ipI2->second, inputSizePropName);
-        }
-      }
-    }
-  }
-}
-
-/**
- * List all the global nodes in the top hierarchy and activate a handler for each global node.
-**/
-void _globalNodesHandler(hcmCell* cell, set<string>* globalNodes, string inputSizePropName) {
-  list<hcmInstPort*> globalInstPort;
-  std::map<std::string, hcmInstPort*>::const_iterator ipI;
-  std::map<std::string, hcmNode*>::const_iterator nI;
-
-  // Set a list with all the nodes in the provided cell, which are global nodes
-  for (nI = cell->getNodes().begin(); nI != cell->getNodes().end(); nI++) {
-    if (globalNodes->find(nI->second->getName()) != globalNodes->end()) {
-      for (ipI = nI->second->getInstPorts().begin(); ipI != nI->second->getInstPorts().end(); ipI++) {
-        globalInstPort.push_back(ipI->second);
-      }
-    }
-  }
-
-  for (auto ip : globalInstPort) {
-    _globalNodesHandlerByProp(ip, inputSizePropName);
-  }
-}
-
-/**
  * Update instance property - rankInputList, of the input instPort's instance.
  * For resolved instances (which all their inputs has ranks) rank the instance and hop the instance to the next instance ports with direction IN.
  * Return a list of type pair<int, hcmInstPort*> of all the instance ports added.
@@ -125,13 +80,15 @@ list<pair<int, hcmInstPort*>> _rankAndGetHopInstPorts(vector<pair<int, string>>&
   assert(currInst->getProp<size_t>(inputSizePropName, inputSize) == OK);
 
   if (rankInputList.size() == inputSize) { // Resolved instance
-    int maxRank = 0, currRank = 0;
+    int maxRank = -1, currRank = -1;
     for (auto inputRank : rankInputList) {
       currRank = inputRank;
       maxRank = max(maxRank, currRank);
     }
 
-    maxRankVector.push_back(pair<int, string>(maxRank, currInst->getName())); // Rank the instance
+    if (maxRank != GLOBAL_NODE_RANK) {
+      maxRankVector.push_back(pair<int, string>(maxRank, currInst->getName()));
+    }
 
     std::map<std::string, hcmInstPort*>::const_iterator ipI1, ipI2;
 
@@ -140,7 +97,7 @@ list<pair<int, hcmInstPort*>> _rankAndGetHopInstPorts(vector<pair<int, string>>&
       if (ipI1->second->getPort()->getDirection() == OUT) {
         for (ipI2 = ipI1->second->getNode()->getInstPorts().begin(); ipI2 != ipI1->second->getNode()->getInstPorts().end(); ipI2++) {
           if (ipI2->second->getPort()->getDirection() == IN) {
-            outputInstPortList.push_back(pair<int, hcmInstPort*>(maxRank+1, ipI2->second));
+            outputInstPortList.push_back(pair<int, hcmInstPort*>(maxRank == GLOBAL_NODE_RANK ? GLOBAL_NODE_RANK : maxRank+1, ipI2->second));
           }
         }
       }
@@ -195,7 +152,16 @@ vector<pair<int, string>> getMaxRankVector(hcmCell* cell, set<string>* globalNod
     }
   }
 
-  _globalNodesHandler(cell, globalNodes, inputSizePropName);
+  // Global nodes handler
+  std::map<std::string, hcmNode*>::const_iterator nI;
+
+  for (nI = cell->getNodes().begin(); nI != cell->getNodes().end(); nI++) {
+    if (globalNodes->find(nI->second->getName()) != globalNodes->end()) {
+      for (ipI = nI->second->getInstPorts().begin(); ipI != nI->second->getInstPorts().end(); ipI++) {
+        instPortList.push_back(pair<int, hcmInstPort*>(GLOBAL_NODE_RANK, ipI->second));
+      }
+    }
+  }
 
   vector<pair<int, string>> maxRankVector = _getMaxRankVectorByProp(cell, &instPortList, globalNodes, inputSizePropName, rankInputListPropName);
 

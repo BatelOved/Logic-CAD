@@ -86,7 +86,7 @@ int getInstCnt(hcmCell* cell, string cellName) {
  * Returns the deepest reach value of the provided node.
 **/
 int _getNodeDeepestReach(hcmNode* node, set<string>* globalNodes) {
-  int value = 0, tmpValue = 0;
+  int deepestReach = 0, currDeepestReach = 0;
   std::map<std::string, hcmInstPort*>::const_iterator ipI;
 
   for (ipI = node->getInstPorts().begin(); ipI != node->getInstPorts().end(); ipI++) {
@@ -97,11 +97,11 @@ int _getNodeDeepestReach(hcmNode* node, set<string>* globalNodes) {
       continue;
     }
 
-    tmpValue = _getNodeDeepestReach(currNode, globalNodes);
-    value = max(value, tmpValue);
+    currDeepestReach = _getNodeDeepestReach(currNode, globalNodes);
+    deepestReach = max(deepestReach, currDeepestReach);
   }
 
-  return value+1;
+  return deepestReach+1;
 }
 
 /**
@@ -109,11 +109,11 @@ int _getNodeDeepestReach(hcmNode* node, set<string>* globalNodes) {
 **/
 int getDeepestReach(hcmCell* cell, set<string>* globalNodes) {
   std::map<std::string, hcmNode*>::const_iterator nI;
-  int deepestReach = 0, NodeDeepestReach = 0;
+  int deepestReach = 0, nodeDeepestReach = 0;
 
   for (nI = cell->getNodes().begin(); nI != cell->getNodes().end(); nI++) {
-    NodeDeepestReach = _getNodeDeepestReach(nI->second, globalNodes);
-    deepestReach = max(deepestReach, NodeDeepestReach);
+    nodeDeepestReach = _getNodeDeepestReach(nI->second, globalNodes);
+    deepestReach = max(deepestReach, nodeDeepestReach);
   }
 
   return deepestReach;
