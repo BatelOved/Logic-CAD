@@ -16,6 +16,10 @@
 !*.mk
 !*.txt
 !*.v
+!*.sv
 !*.pdf
 !*.rank
 !*.stat
+!*.vcd
+!*.vec
+!*.sig
