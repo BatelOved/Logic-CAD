@@ -18,7 +18,7 @@ class RingBuffer {
 	T work_queue[N];
 
 public:
-    RingBuffer() : head(0), tail(0) {}
+    RingBuffer() : head(1), tail(1) {}
 
     bool push(const T& wqe) {
         if (full()) return false;
@@ -42,19 +42,16 @@ public:
         return (tail - head == N);
     }
 
-	T& getHeadWqe() {
-		return work_queue[head % N];
+	T& getWqe(int idx) {
+		return work_queue[idx % N];
 	}
 
-	T& getTailWqe() {
-		return work_queue[tail % N];
+	void advanceHead() {
+		++head;
 	}
 
-	T* getWqe(int idx) {
-		if(idx < head || idx > tail) {
-			return nullptr;
-		}
-		return &work_queue[idx % N];
+	void advanceTail() {
+		++tail;
 	}
 };
 
@@ -76,30 +73,29 @@ public:
 	// void evaluateEvent();
 
 	bool empty(int time) {
-		list<Event>* curr_events = events.getWqe(time);
-		assert(curr_events != nullptr);
+		list<Event>& curr_events = events.getWqe(time);
 
-		if(!curr_events || curr_events->empty()) {
+		if(curr_events.empty()) {
 			return true;
 		}
 		return false;
 	}
 
 	void insert(Event event, int time) {
-		list<Event>& curr_event_list = events.getTailWqe();
-		auto event_it = std::find(curr_event_list.begin(), curr_event_list.end(), event);
-		if(event_it != curr_event_list.end()) {
+		list<Event>& curr_events = events.getWqe(time);
+		auto event_it = std::find(curr_events.begin(), curr_events.end(), event);
+		if(event_it != curr_events.end()) {
 			event_it->second = event.second;
 		}
 		else {
-			curr_event_list.push_back(event);
+			curr_events.push_back(event);
 		}
 	}
 
-	void remove(Event event) {
-		list<Event>& curr_event_list = events.getTailWqe();
-		auto event_it = std::find(curr_event_list.begin(), curr_event_list.end(), event);
-		curr_event_list.erase(event_it);
+	void remove(Event event, int time) {
+		list<Event>& curr_events = events.getWqe(time);
+		auto event_it = std::find(curr_events.begin(), curr_events.end(), event);
+		curr_events.erase(event_it);
 	}
 
 	friend class EventDrivenSim;
@@ -149,7 +145,7 @@ public:
 	}
 
 	bool simulate(hcmInstance* gate, vector<bool> oldGateInputs, vector<bool> gateInputs) {
-		switch(gateToEnum(gate->getName())) {
+		switch(gateToEnum(gate->masterCell()->getName())) {
 			case BUFFER:
 				return gateInputs[0];
 				break;
@@ -391,7 +387,8 @@ public:
 	 *	EndFor;
 	 **/
 	void Event_Processor() {
-		for(auto event : Event_Queue.events.getTailWqe()) {
+		list<Event> curr_events = Event_Queue.events.getWqe(time);
+		for(auto event : curr_events) {
 			Net_Table.update(event.first, event.second);
 
 			FanOutGates fanout_gates = Net_Table.getFanoutGates(event.first);
@@ -402,7 +399,7 @@ public:
 					Gate_Queue.gates.push_back(gate);
 				}
 			}
-			Event_Queue.remove(event);
+			Event_Queue.remove(event, time);
 		}
 	}
 
@@ -420,8 +417,8 @@ public:
 	 *	EndFor
 	 **/
 	void Gate_Processor() {
-		for(auto gate : Gate_Queue.gates) {
-
+		FanOutGates fanOut_gates = Gate_Queue.gates;
+		for(auto gate : fanOut_gates) {
 			pair<vector<bool>, vector<bool>> gate_inputs = GetGateInputs(gate);
 			bool newVal = Gate_Queue.simulate(gate, gate_inputs.first, gate_inputs.second);
 
@@ -487,10 +484,14 @@ public:
 		// 	vcd.changeValue(nodeCtxPair.first, nodeCtxPair.second);
 		// }
 
+		cout << "Time: " << time << endl;
+
 		std::map<string, NetTableEntry>::iterator nte;
 		for(nte = Net_Table.nets.begin(); nte != Net_Table.nets.end(); nte++) {
-			cout << "Net " << nte->first << ": " << "old value: " << nte->second.getValues().first << "new value: " << nte->second.getValues().second << endl;
+			cout << "Net " << nte->first << ": " << "old value: " << nte->second.getValues().first << " new value: " << nte->second.getValues().second << endl;
 		}
+
+		cout << endl;
 	}
 
 	void SimulateVector(vector<pair<string, bool>> input_vector) {
@@ -503,6 +504,8 @@ public:
 			}
 		}
 		PrintFinalOutput();
+		Event_Queue.events.advanceTail();
+		Event_Queue.events.advanceHead();
 	}
 
 	void Simulate() {
