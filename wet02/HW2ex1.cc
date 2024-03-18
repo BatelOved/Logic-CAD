@@ -11,91 +11,67 @@
 
 using namespace std;
 
-template <typename T, uint8_t size>
-class RingBuffer {
-    static const size_t N = size;
-    size_t head, tail;
-	T work_queue[N];
-
-public:
-    RingBuffer() : head(1), tail(1) {}
-
-    bool push(const T& wqe) {
-        if (full()) return false;
-        work_queue[tail % N] = wqe;
-		++tail;
-        return true;
-    }
-
-    bool pop(T* wqe) {
-        if (empty()) return false;
-        *wqe = work_queue[head % N];
-		++head;
-        return true;
-    }
-
-    bool empty() {
-        return (tail - head == 0);
-    }
-
-    bool full() {
-        return (tail - head == N);
-    }
-
-	T& getWqe(int idx) {
-		return work_queue[idx % N];
-	}
-
-	void advanceHead() {
-		++head;
-	}
-
-	void advanceTail() {
-		++tail;
-	}
-};
-
 const bool INIT_VAL = false;
 typedef list<hcmInstance*> FanOutGates;
-typedef pair<hcmNode*, bool> Event;
-typedef RingBuffer<list<Event>, 16> EventsRingBuffer; // TODO check max time
 
-class EventQueue {
-	EventsRingBuffer events;
+
+class Event {
+	typedef enum {
+		UPDATE_EVENT,
+		EVALUATION_EVENT
+	} EVENT_TYPE;
+	
+	hcmNode* 	node;
+	EVENT_TYPE  type;
+	bool 		value;
 
 public:
-	EventQueue() {};
+	Event(hcmNode* node, EVENT_TYPE type, bool value) : node(node), type(type), value(value) {}
+
+	~Event() {}
+
+	friend class EventQueue;
+	friend class EventDrivenSim;
+};
+
+class EventQueue {
+	list<Event> events;
+
+public:
+	EventQueue() {}
 
 	~EventQueue() {}
 
-	// void updateEvent();
-
-	// void evaluateEvent();
-
-	bool empty(int time) {
-		list<Event>& curr_events = events.getWqe(time);
-
-		if(curr_events.empty()) {
-			return true;
-		}
-		return false;
+	bool empty() {
+		return events.empty();
 	}
 
-	void insert(Event event, int time) {
-		list<Event>& curr_events = events.getWqe(time);
-		auto event_it = std::find(curr_events.begin(), curr_events.end(), event);
-		if(event_it != curr_events.end()) {
-			event_it->second = event.second;
+	list<Event>::iterator find(Event event) {
+		std::list<Event>::iterator event_it;
+
+		for(event_it = events.begin(); event_it != events.end(); event_it++) {
+			if(event_it->node == event.node) {
+				return event_it;
+			}
+		}
+
+		return events.end();
+	}
+
+	void insert(Event event) {
+		std::list<Event>::iterator event_it = find(event);
+
+		if(event_it != events.end()) {
+			event_it->value = event.value;
 		}
 		else {
-			curr_events.push_back(event);
+			events.push_back(event);
 		}
 	}
 
-	void remove(Event event, int time) {
-		list<Event>& curr_events = events.getWqe(time);
-		auto event_it = std::find(curr_events.begin(), curr_events.end(), event);
-		curr_events.erase(event_it);
+	void remove(Event event) {
+		list<Event>::iterator event_it = find(event);
+		events.erase(event_it);
 	}
 
 	friend class EventDrivenSim;
@@ -104,6 +80,7 @@ public:
 class GateQueue {
 	list<hcmInstance*> gates;
 
+public:
 	typedef enum {
 		BUFFER, NOT, DFF,
 		OR2, NOR2, AND2, NAND2, XOR2,
@@ -130,8 +107,7 @@ class GateQueue {
 		{"or9",OR9}, {"nor9",NOR9}, {"and9",AND9}, {"nand9",NAND9}
 	};
 
-public:
-	GateQueue() {};
+	GateQueue() {}
 
 	~GateQueue() {}
 
@@ -144,115 +120,115 @@ public:
 		gates.erase(gate_it);
 	}
 
-	bool simulate(hcmInstance* gate, vector<bool> oldGateInputs, vector<bool> gateInputs) {
+	bool simulate(hcmInstance* gate, vector<bool> oldGateInputs, vector<bool> gateInputs, bool gate_output) {
 		switch(gateToEnum(gate->masterCell()->getName())) {
 			case BUFFER:
 				return gateInputs[0];
 				break;
 			case NOT:
-				return ~gateInputs[0];
+				return !gateInputs[0];
 				break;
 			case DFF:
-				return oldGateInputs[0];
+				return gateInputs[0] ? oldGateInputs[1] : gate_output;
 				break;
 			case OR2:
-				return gateInputs[0] | gateInputs[1];
+				return gateInputs[0] || gateInputs[1];
 				break;
 			case NOR2:
-				return ~(gateInputs[0] | gateInputs[1]);
+				return !(gateInputs[0] || gateInputs[1]);
 				break;
 			case AND2:
-				return gateInputs[0] & gateInputs[1];
+				return gateInputs[0] && gateInputs[1];
 				break;
 			case NAND2:
-				return ~(gateInputs[0] & gateInputs[1]);
+				return !(gateInputs[0] && gateInputs[1]);
 				break;
 			case XOR2:
 				return gateInputs[0] ^ gateInputs[1];
 				break;
 			case OR3:
-				return gateInputs[0] | gateInputs[1] | gateInputs[2];
+				return gateInputs[0] || gateInputs[1] || gateInputs[2];
 				break;
 			case NOR3:
-				return ~(gateInputs[0] | gateInputs[1] | gateInputs[2]);
+				return !(gateInputs[0] || gateInputs[1] || gateInputs[2]);
 				break;
 			case AND3:
-				return gateInputs[0] & gateInputs[1] & gateInputs[2];
+				return gateInputs[0] && gateInputs[1] && gateInputs[2];
 				break;
 			case NAND3:
-				return ~(gateInputs[0] & gateInputs[1] & gateInputs[2]);
+				return !(gateInputs[0] && gateInputs[1] && gateInputs[2]);
 				break;
 			case OR4:
-				return gateInputs[0] | gateInputs[1] | gateInputs[2] | gateInputs[3];
+				return gateInputs[0] || gateInputs[1] || gateInputs[2] || gateInputs[3];
 				break;
 			case NOR4:
-				return ~(gateInputs[0] | gateInputs[1] | gateInputs[2] | gateInputs[3]);
+				return !(gateInputs[0] || gateInputs[1] || gateInputs[2] || gateInputs[3]);
 				break;
 			case AND4:
-				return gateInputs[0] & gateInputs[1] & gateInputs[2] & gateInputs[3];
+				return gateInputs[0] && gateInputs[1] && gateInputs[2] && gateInputs[3];
 				break;
 			case NAND4:
-				return ~(gateInputs[0] & gateInputs[1] & gateInputs[2] & gateInputs[3]);
+				return !(gateInputs[0] && gateInputs[1] && gateInputs[2] && gateInputs[3]);
 				break;
 			case OR5:
-
+				return gateInputs[0] || gateInputs[1] || gateInputs[2] || gateInputs[3] || gateInputs[4];
 				break;
 			case NOR5:
-
+				return !(gateInputs[0] || gateInputs[1] || gateInputs[2] || gateInputs[3] || gateInputs[4]);
 				break;
 			case AND5:
-
+				return gateInputs[0] && gateInputs[1] && gateInputs[2] && gateInputs[3] && gateInputs[4];
 				break;
 			case NAND5:
-
+				return !(gateInputs[0] && gateInputs[1] && gateInputs[2] && gateInputs[3] && gateInputs[4]);
 				break;
 			case OR6:
-
+				return gateInputs[0] || gateInputs[1] || gateInputs[2] || gateInputs[3] || gateInputs[4] || gateInputs[5];
 				break;
 			case NOR6:
-
+				return !(gateInputs[0] || gateInputs[1] || gateInputs[2] || gateInputs[3] || gateInputs[4] || gateInputs[5]);
 				break;
 			case AND6:
-
+				return gateInputs[0] && gateInputs[1] && gateInputs[2] && gateInputs[3] && gateInputs[4] && gateInputs[5];
 				break;
 			case NAND6:
-
+				return !(gateInputs[0] && gateInputs[1] && gateInputs[2] && gateInputs[3] && gateInputs[4] && gateInputs[5]);
 				break;
 			case OR7:
-
+				return gateInputs[0] || gateInputs[1] || gateInputs[2] || gateInputs[3] || gateInputs[4] || gateInputs[5] || gateInputs[6];
 				break;
 			case NOR7:
-
+				return !(gateInputs[0] || gateInputs[1] || gateInputs[2] || gateInputs[3] || gateInputs[4] || gateInputs[5] || gateInputs[6]);
 				break;
 			case AND7:
-
+				return gateInputs[0] && gateInputs[1] && gateInputs[2] && gateInputs[3] && gateInputs[4] && gateInputs[5] && gateInputs[6];
 				break;
 			case NAND7:
-
+				return !(gateInputs[0] && gateInputs[1] && gateInputs[2] && gateInputs[3] && gateInputs[4] && gateInputs[5] && gateInputs[6]);
 				break;
 			case OR8:
-
+				return gateInputs[0] || gateInputs[1] || gateInputs[2] || gateInputs[3] || gateInputs[4] || gateInputs[5] || gateInputs[6] || gateInputs[7];
 				break;
 			case NOR8:
-
+				return !(gateInputs[0] || gateInputs[1] || gateInputs[2] || gateInputs[3] || gateInputs[4] || gateInputs[5] || gateInputs[6] || gateInputs[7]);
 				break;
 			case AND8:
-
+				return gateInputs[0] && gateInputs[1] && gateInputs[2] && gateInputs[3] && gateInputs[4] && gateInputs[5] && gateInputs[6] && gateInputs[7];
 				break;
 			case NAND8:
-
+				return !(gateInputs[0] && gateInputs[1] && gateInputs[2] && gateInputs[3] && gateInputs[4] && gateInputs[5] && gateInputs[6] && gateInputs[7]);
 				break;
 			case OR9:
-
+				return gateInputs[0] || gateInputs[1] || gateInputs[2] || gateInputs[3] || gateInputs[4] || gateInputs[5] || gateInputs[6] || gateInputs[7] || gateInputs[8];
 				break;
 			case NOR9:
-
+				return !(gateInputs[0] || gateInputs[1] || gateInputs[2] || gateInputs[3] || gateInputs[4] || gateInputs[5] || gateInputs[6] || gateInputs[7] || gateInputs[8]);
 				break;
 			case AND9:
-
+				return gateInputs[0] && gateInputs[1] && gateInputs[2] && gateInputs[3] && gateInputs[4] && gateInputs[5] && gateInputs[6] && gateInputs[7] && gateInputs[8];
 				break;
 			case NAND9:
-
+				return !(gateInputs[0] && gateInputs[1] && gateInputs[2] && gateInputs[3] && gateInputs[4] && gateInputs[5] && gateInputs[6] && gateInputs[7] && gateInputs[8]);
 				break;
 			default:
 				assert(false);
@@ -271,17 +247,21 @@ public:
 class NetTableEntry {
 	bool val;
 	bool newVal;
+	hcmNode* node;
 	FanOutGates fanOut_gates;
 
 public:
-	NetTableEntry(bool val, bool newVal, FanOutGates fanOut_gates) : 
-		val(val), newVal(newVal), fanOut_gates(fanOut_gates) {};
+	NetTableEntry(bool val, bool newVal, hcmNode* node, FanOutGates fanOut_gates) : 
+		val(val), newVal(newVal), node(node), fanOut_gates(fanOut_gates) {};
 
 	~NetTableEntry() {};
 
-	void update(bool val) {
-		this->val = newVal;
-		this->newVal = val;
+	void update(bool newVal) {
+		this->newVal = newVal;
+	}
+
+	void advanceTime() {
+		val = newVal;
 	}
 
 	FanOutGates& getFanOutGates() {
@@ -290,6 +270,10 @@ public:
 
 	pair<bool, bool> getValues() {
 		return pair<bool, bool>(val, newVal);
+	}
+
+	hcmNode* getNode() {
+		return node;
 	}
 
 	friend class NetTable;
@@ -340,7 +324,15 @@ public:
 			nte->update(newVal);
 		}
 		else {
-			nets.insert({node->getName(), NetTableEntry(INIT_VAL, newVal, getFanoutGates(node))});
+			nets.insert({node->getName(), NetTableEntry(INIT_VAL, newVal, node, getFanoutGates(node))});
+		}
+	}
+
+	void advanceTime() {
+		std::map<string, NetTableEntry>::iterator nte;
+
+		for(nte = nets.begin(); nte != nets.end(); nte++) {
+			nte->second.advanceTime();
 		}
 	}
 
@@ -360,8 +352,8 @@ class EventDrivenSim {
 	int  		  time;
 
 public:
-	EventDrivenSim(vcdFormatter& vcd, hcmSigVec& parser, hcmCell *flatCell, set<string>& globalNodes):
-		vcd(vcd), parser(parser), flatCell(flatCell), globalNodes(globalNodes), time(1) {
+	EventDrivenSim(vcdFormatter& vcd, hcmSigVec& parser, hcmCell *flatCell, set<string>& globalNodes, int time):
+		vcd(vcd), parser(parser), flatCell(flatCell), globalNodes(globalNodes), time(time) {
 		parser.getSignals(signals);
 	}
 
@@ -370,7 +362,37 @@ public:
 	void CircuitInput(vector<pair<string, bool>> input_vector) {
 		for(auto input : input_vector) {
 			hcmNode* node = flatCell->getNode(input.first);
-			Event_Queue.insert(Event(node, input.second), time);
+			Event_Queue.insert(Event(node, Event::UPDATE_EVENT, input.second));
+		}
+	}
+
+	bool updateEvent(Event event) {
+		NetTableEntry* nte;
+		nte = Net_Table.find(event.node);
+
+		if(nte == nullptr) {
+			Net_Table.update(event.node, event.value);
+			return true;
+		}
+		else {
+			nte->update(event.value);
+			pair<bool, bool> values = nte->getValues();
+
+			if(values.first != values.second) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	void evaluateEvent(Event event) {
+		FanOutGates fanout_gates = Net_Table.getFanoutGates(event.node);
+
+		for(auto gate : fanout_gates) {
+			auto gate_it = std::find(Gate_Queue.gates.begin(), Gate_Queue.gates.end(), gate);
+			if(gate_it == Gate_Queue.gates.end()) {
+				Gate_Queue.gates.push_back(gate);
+			}
 		}
 	}
 
@@ -387,19 +409,18 @@ public:
 	 *	EndFor;
 	 **/
 	void Event_Processor() {
-		list<Event> curr_events = Event_Queue.events.getWqe(time);
-		for(auto event : curr_events) {
-			Net_Table.update(event.first, event.second);
+		list<Event> events = Event_Queue.events;
+		for(auto event : events) {
+			Event_Queue.remove(event);
 
-			FanOutGates fanout_gates = Net_Table.getFanoutGates(event.first);
-
-			for(auto gate : fanout_gates) {
-				auto gate_it = std::find(Gate_Queue.gates.begin(), Gate_Queue.gates.end(), gate);
-				if(gate_it == Gate_Queue.gates.end()) {
-					Gate_Queue.gates.push_back(gate);
+			if(event.type == Event::UPDATE_EVENT) {
+				if(updateEvent(event)) {
+					Event_Queue.insert(Event(event.node, Event::EVALUATION_EVENT, event.value));
 				}
 			}
-			Event_Queue.remove(event, time);
+			else if(event.type == Event::EVALUATION_EVENT) {
+				evaluateEvent(event);
+			}
 		}
 	}
 
@@ -420,25 +441,15 @@ public:
 		FanOutGates fanOut_gates = Gate_Queue.gates;
 		for(auto gate : fanOut_gates) {
 			pair<vector<bool>, vector<bool>> gate_inputs = GetGateInputs(gate);
-			bool newVal = Gate_Queue.simulate(gate, gate_inputs.first, gate_inputs.second);
+			bool gate_output = GetGateOutput(gate);
+			bool newVal = Gate_Queue.simulate(gate, gate_inputs.first, gate_inputs.second, gate_output);
 
 			std::map<std::string, hcmInstPort*>::const_iterator ipI;
 
 			for(ipI = gate->getInstPorts().begin(); ipI != gate->getInstPorts().end(); ipI++) {
 				if(ipI->second->getPort()->getDirection() == OUT) {
 					hcmNode* node = ipI->second->getNode();
-					NetTableEntry* nte = Net_Table.find(node);
-
-					if(nte == nullptr) {
-						Event_Queue.insert(Event(node, newVal), time);
-					}
-					else {
-						pair<bool, bool> values = nte->getValues();
-
-						if(values.first != values.second) {
-							Event_Queue.insert(Event(node, newVal), time);
-						}
-					}
+					Event_Queue.insert(Event(node, Event::UPDATE_EVENT, newVal));
 				}
 			}
 			Gate_Queue.remove(gate);
@@ -451,16 +462,20 @@ public:
 
 		for(ipI = gate->getInstPorts().begin(); ipI != gate->getInstPorts().end(); ipI++) {
 			if(ipI->second->getPort()->getDirection() == IN) {
-				if(ipI->second->getPort()->getName().compare("CLK") == 0) {
-					continue;
-				}
 				hcmNode* node = ipI->second->getNode();
 				NetTableEntry* nte = Net_Table.find(node);
 
 				if(nte) {
 					pair<bool, bool> values = nte->getValues();
-					gate_inputs.first.push_back(values.first);
-					gate_inputs.second.push_back(values.second);
+
+					if(ipI->second->getPort()->getName().compare("CLK") == 0) {
+						gate_inputs.first.insert(gate_inputs.first.begin(), values.first);
+						gate_inputs.second.insert(gate_inputs.second.begin(), values.second);
+					}
+					else {
+						gate_inputs.first.push_back(values.first);
+						gate_inputs.second.push_back(values.second);
+					}
 				}
 				else {
 					gate_inputs.first.push_back(INIT_VAL);
@@ -471,48 +486,65 @@ public:
 		return gate_inputs;
 	}
 
-	void PrintIntermediateOutput() {
-		// // go over all values and write them to the vcd.
-		// for (auto nodeCtxPair : out_vector) {
-		// 	vcd.changeValue(nodeCtxPair.first, nodeCtxPair.second);
-		// }
+	bool GetGateOutput(hcmInstance *gate) {
+		bool gate_output;
+		std::map<std::string, hcmInstPort*>::const_iterator ipI;
+
+		for(ipI = gate->getInstPorts().begin(); ipI != gate->getInstPorts().end(); ipI++) {
+			if(ipI->second->getPort()->getDirection() == OUT) {
+				hcmNode* node = ipI->second->getNode();
+				NetTableEntry* nte = Net_Table.find(node);
+
+				if(nte) {
+					pair<bool, bool> values = nte->getValues();
+					gate_output = values.second;
+				}
+				else {
+					gate_output = INIT_VAL;
+				}
+			}
+		}
+		return gate_output;
 	}
 
 	void PrintFinalOutput() {
-		// // go over all values and write them to the vcd.
-		// for (auto nodeCtxPair : out_vector) {
-		// 	vcd.changeValue(nodeCtxPair.first, nodeCtxPair.second);
-		// }
-
-		cout << "Time: " << time << endl;
-
+		const hcmNode *node;
+		list<const hcmInstance*> parents;
 		std::map<string, NetTableEntry>::iterator nte;
+
 		for(nte = Net_Table.nets.begin(); nte != Net_Table.nets.end(); nte++) {
-			cout << "Net " << nte->first << ": " << "old value: " << nte->second.getValues().first << " new value: " << nte->second.getValues().second << endl;
+			node = nte->second.getNode();
+			hcmNodeCtx *ctx = new hcmNodeCtx(parents, node); // TODO Batel - parents???
+			vcd.changeValue(ctx, nte->second.getValues().second);
 		}
 
-		cout << endl;
+		// TODO Batel
+		// cout << "Time: " << time-1 << endl;
+
+		// for(nte = Net_Table.nets.begin(); nte != Net_Table.nets.end(); nte++) {
+		// 	cout << "Net " << nte->first << ": " << "old value: " << nte->second.getValues().first << " new value: " << nte->second.getValues().second << endl;
+		// }
+
+		// cout << endl;
 	}
 
 	void SimulateVector(vector<pair<string, bool>> input_vector) {
 		CircuitInput(input_vector);
-		while(!Event_Queue.empty(time)) {
+		while(!Event_Queue.empty()) {
 			Event_Processor();
 			if(!Gate_Queue.empty()) {
-				PrintIntermediateOutput();
 				Gate_Processor();
 			}
 		}
 		PrintFinalOutput();
-		Event_Queue.events.advanceTail();
-		Event_Queue.events.advanceHead();
+		Net_Table.advanceTime();
 	}
 
 	void Simulate() {
 		// reading each vector
 		while (parser.readVector() == 0) {
 			// set the inputs to the values from the input vector.
-			vector<pair<string, bool>> 	in_vector;
+			vector<pair<string, bool>>	in_vector;
 
 			for (set<string>::iterator sig = signals.begin(); sig != signals.end(); sig++) {
 				string name = (*sig);
@@ -597,7 +629,7 @@ int main(int argc, char **argv) {
 	// you need to submit your work with debug_mode = false
 	// vcdFormatter vcd(cellName + ".vcd", flatCell, globalNodes, true);  <--- for debug only!
 	//-----------------------------------------------------------------------------------------//
-	vcdFormatter vcd(cellName + ".vcd", flatCell, globalNodes);
+	vcdFormatter vcd(cellName + ".vcd", flatCell, globalNodes); // TODO Batel tmp
 	if(!vcd.good()) {
 		printf("-E- vcd initialization error.\n");
 		exit(1);
@@ -611,7 +643,7 @@ int main(int argc, char **argv) {
 
 	//-----------------------------------------------------------------------------------------//
 
-	EventDrivenSim sim(vcd, parser, flatCell, globalNodes);
+	EventDrivenSim sim(vcd, parser, flatCell, globalNodes, time);
 
 	sim.Simulate();
 
