@@ -74,6 +74,13 @@ public:
 		events.erase(event_it);
 	}
 
+	void printEventQueue() {
+		for(auto it : events) {
+			cout << "EVENT: " << " node: " << it.node->getName() << " value: " << it.value << endl;
+		}
+		cout << endl;
+	}
+
 	friend class EventDrivenSim;
 };
 
@@ -241,22 +248,31 @@ public:
 		return gates_map.find(gateName)->second;
 	}
 
+	void printGateQueue() {
+		for(auto it : gates) {
+			cout << "GATE: " << " cell: " << it->masterCell()->getName() << " inst: " << it->getName() << endl;
+		}
+		cout << endl;
+	}
+
 	friend class EventDrivenSim;
 };
 
 class NetTableEntry {
 	bool val;
 	bool newVal;
+	bool init_val;
 	hcmNode* node;
 	FanOutGates fanOut_gates;
 
 public:
-	NetTableEntry(bool val, bool newVal, hcmNode* node, FanOutGates fanOut_gates) : 
-		val(val), newVal(newVal), node(node), fanOut_gates(fanOut_gates) {};
+	NetTableEntry(bool val, bool newVal, hcmNode* node, FanOutGates fanOut_gates, bool init_val = true) : 
+		val(val), newVal(newVal), init_val(init_val), node(node), fanOut_gates(fanOut_gates) {};
 
 	~NetTableEntry() {};
 
 	void update(bool newVal) {
+		init_val = false;
 		this->newVal = newVal;
 	}
 
@@ -274,6 +290,10 @@ public:
 
 	hcmNode* getNode() {
 		return node;
+	}
+
+	bool isInitVal() {
+		return init_val;
 	}
 
 	friend class NetTable;
@@ -324,7 +344,7 @@ public:
 			nte->update(newVal);
 		}
 		else {
-			nets.insert({node->getName(), NetTableEntry(INIT_VAL, newVal, node, getFanoutGates(node))});
+			nets.insert({node->getName(), NetTableEntry(INIT_VAL, newVal, node, getFanoutGates(node), false)});
 		}
 	}
 
@@ -334,6 +354,13 @@ public:
 		for(nte = nets.begin(); nte != nets.end(); nte++) {
 			nte->second.advanceTime();
 		}
+	}
+
+	void printNetTable() {
+		for(auto it : nets) {
+			cout << "NET: " << " node: " << it.first << " init_val: " << it.second.init_val << " value: " << it.second.val << " new value: " << it.second.newVal << endl;
+		}
+		cout << endl;
 	}
 
 	friend class EventDrivenSim;
@@ -359,6 +386,19 @@ public:
 
 	~EventDrivenSim() {}
 
+	void initializeNodes() {
+		std::map<std::string, hcmNode*>::const_iterator nI;
+		
+		for(auto nI : flatCell->getNodes()) {
+			hcmNode* node = nI.second;
+			bool initVal = node->getName() == "VDD" ? 1 : INIT_VAL;
+			if (globalNodes.find(node->getName()) != globalNodes.end()) {
+				Event_Queue.insert(Event(node, Event::UPDATE_EVENT, initVal));
+			}
+			Net_Table.nets.insert({node->getName(), NetTableEntry(initVal, initVal, node, Net_Table.getFanoutGates(node))});
+		}
+	}
+
 	void CircuitInput(vector<pair<string, bool>> input_vector) {
 		for(auto input : input_vector) {
 			hcmNode* node = flatCell->getNode(input.first);
@@ -376,9 +416,10 @@ public:
 		}
 		else {
 			pair<bool, bool> values = nte->getValues();
+			bool init_val = nte->isInitVal();
 			nte->update(event.value);
 
-			if(event.value != values.second) {
+			if((event.value != values.second) || init_val) {
 				return true;
 			}
 		}
@@ -412,6 +453,7 @@ public:
 		list<Event> events = Event_Queue.events;
 		for(auto event : events) {
 			Event_Queue.remove(event);
+			
 			if(event.type == Event::UPDATE_EVENT) {
 				if(updateEvent(event)) {
 					Event_Queue.insert(Event(event.node, Event::EVALUATION_EVENT, event.value));
@@ -509,7 +551,7 @@ public:
 		return gate_output;
 	}
 
-	void PrintFinalOutput() {
+	void WriteFinalOutput() {
 		const hcmNode *node;
 		list<const hcmInstance*> parents;
 		std::map<string, NetTableEntry>::iterator nte;
@@ -519,17 +561,6 @@ public:
 			hcmNodeCtx *ctx = new hcmNodeCtx(parents, node);
 			vcd.changeValue(ctx, nte->second.getValues().second);
 		}
-
-		// TODO Batel
-		if(time != 1) return;
-		
-		cout << "Time: " << time-1 << endl;
-
-		for(nte = Net_Table.nets.begin(); nte != Net_Table.nets.end(); nte++) {
-			cout << "Net " << nte->first << ": " << "old value: " << nte->second.getValues().first << " new value: " << nte->second.getValues().second << endl;
-		}
-
-		cout << endl;
 	}
 
 	void SimulateVector(vector<pair<string, bool>> input_vector) {
@@ -540,11 +571,13 @@ public:
 				Gate_Processor();
 			}
 		}
-		PrintFinalOutput();
+		WriteFinalOutput();
 		Net_Table.advanceTime();
 	}
 
 	void Simulate() {
+		initializeNodes();
+
 		// reading each vector
 		while (parser.readVector() == 0) {
 			// set the inputs to the values from the input vector.
@@ -633,7 +666,7 @@ int main(int argc, char **argv) {
 	// you need to submit your work with debug_mode = false
 	// vcdFormatter vcd(cellName + ".vcd", flatCell, globalNodes, true);  <--- for debug only!
 	//-----------------------------------------------------------------------------------------//
-	vcdFormatter vcd(cellName + ".vcd", flatCell, globalNodes); // TODO Batel
+	vcdFormatter vcd(cellName + ".vcd", flatCell, globalNodes);
 	if(!vcd.good()) {
 		printf("-E- vcd initialization error.\n");
 		exit(1);
