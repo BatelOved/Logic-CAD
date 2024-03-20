@@ -14,7 +14,9 @@ using namespace std;
 const bool INIT_VAL = false;
 typedef list<hcmInstance*> FanOutGates;
 
-
+/**
+ * @brief Represents an event in the simulation.
+ */
 class Event {
 	typedef enum {
 		UPDATE_EVENT,
@@ -34,6 +36,9 @@ public:
 	friend class EventDrivenSim;
 };
 
+/**
+ * @brief Manages a queue of events.
+ */
 class EventQueue {
 	list<Event> events;
 
@@ -84,6 +89,9 @@ public:
 	friend class EventDrivenSim;
 };
 
+/**
+ * @brief Manages a queue of gates (logic gates in the circuit).
+ */
 class GateQueue {
 	list<hcmInstance*> gates;
 
@@ -258,6 +266,9 @@ public:
 	friend class EventDrivenSim;
 };
 
+/**
+ * @brief Represents an entry in the net table, storing the current and new values of a node in the circuit.
+ */
 class NetTableEntry {
 	bool val;
 	bool newVal;
@@ -299,6 +310,9 @@ public:
 	friend class NetTable;
 };
 
+/**
+ * @brief Manages a table of net table entries.
+ */
 class NetTable {
 	map<string, NetTableEntry> nets;
 
@@ -366,6 +380,9 @@ public:
 	friend class EventDrivenSim;
 };
 
+/**
+ * @brief The main simulation class for the event-driven simulator.
+ */
 class EventDrivenSim {
 	EventQueue    Event_Queue;
 	GateQueue     Gate_Queue;
@@ -386,6 +403,9 @@ public:
 
 	~EventDrivenSim() {}
 
+	/**
+     * @brief Initializes the nodes in the circuit.
+     */
 	void initializeNodes() {
 		std::map<std::string, hcmNode*>::const_iterator nI;
 		
@@ -437,18 +457,9 @@ public:
 		}
 	}
 
-	/**
-	 *  For each Event E in Event_Queue do
-	 *		N:=Net Identifier of E
-	 *		Copy New value from E to the Net Table entry for N.
-	 *		For each gate G in the fanout of N do
-	 *			If G is not already in the Gate_Queue Then
-	 *				Add G to Gate_Queue
-	 *			End If
-	 *		End For
-	 *		Remove E from Event_Queue
-	 *	EndFor;
-	 **/
+    /**
+     * @brief Processes the events in the event queue.
+     */
 	void Event_Processor() {
 		list<Event> events = Event_Queue.events;
 		for(auto event : events) {
@@ -465,19 +476,9 @@ public:
 		}
 	}
 
-	/**
-	 *  For Each Gate G in Gate_Queue do
-	 *		N:= The Output of G
-	 *		Simulate G, put the result in New_N
-	 *		If New_N is different from the current value of N then
-	 *			Create a new event E
-	 *			Net Identifier of E := N
-	 *			New value of E := New_N
-	 *			Add E to Event_Queue
-	 *		End If
-	 *		Remove G from Gate_Queue
-	 *	EndFor
-	 **/
+    /**
+     * @brief Processes the gates in the gate queue.
+     */
 	void Gate_Processor() {
 		FanOutGates gates = Gate_Queue.gates;
 		for(auto gate : gates) {
@@ -563,6 +564,11 @@ public:
 		}
 	}
 
+    /**
+     * @brief Simulates a vector of inputs.
+     * 
+     * @param input_vector The vector of input values.
+     */
 	void SimulateVector(vector<pair<string, bool>> input_vector) {
 		CircuitInput(input_vector);
 		while(!Event_Queue.empty()) {
@@ -575,6 +581,9 @@ public:
 		Net_Table.advanceTime();
 	}
 
+    /**
+     * @brief Simulates the entire circuit.
+     */
 	void Simulate() {
 		initializeNodes();
 

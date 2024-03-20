@@ -116,7 +116,10 @@ int hcmSigVec::readVector() {
 
   // convert the line string to bits assigning them by index to each signal
   char c = input_vector[--strLen];
-  unsigned digit = strtoul(&c, (char **) NULL, 16);
+
+  string str(1, c);
+  unsigned digit = strtoul(str.c_str(), (char **) NULL, 16);
+
   for (unsigned int i = 0; i < sigValsByIdx.size(); i++) {
     sigValsByIdx[i] = digit & 1;
     if (verbose) {
