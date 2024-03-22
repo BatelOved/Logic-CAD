@@ -1,6 +1,6 @@
 # Update the paths below according to your directory structure
-HCMPATH=..
-MINISAT=../minisat
+HCMPATH=../..
+MINISAT=../../minisat
 
 # required for adding code of minisat to your program
 MINISAT_OBJS=$(MINISAT)/core/Solver.o $(MINISAT)/utils/Options.o $(MINISAT)/utils/System.o
