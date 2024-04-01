@@ -1,17 +1,23 @@
 
-module  TopLevel1997 (IN, OUT);
+module  TopLevel3002 (IN, OUT);
 
   input  [0:1]  IN;
   output [0:0]  OUT;
 
-  nand nand0 (.A(IN[0]), .B(IN[1]), .Y(OUT[0]));
+  wire [0:2]   W;
 
-endmodule /* TopLevel1997 */
+  dff dff0 (.D(IN[0]), .Q(W[0]));
+  dff dff2 (.D(IN[1]), .Q(W[1]));
+
+  and and0 (.A(W[0]), .B(W[1]), .Y(W[2]));
+  not not0 (.A(W[2]), .Y(OUT[0]));
+
+endmodule /* TopLevel3002 */
 
 
 /*************************************************************************/
 
-module Circuit1997 (in0, in1,
+module Circuit3002 (in0, in1,
                     out0);
 
   input      in0, in1;
@@ -25,8 +31,8 @@ module Circuit1997 (in0, in1,
   buffer addedBuf0 (.A(in0), .Y(IW[0]));
   buffer addedBuf1 (.A(in1), .Y(IW[1]));
 
-  TopLevel1997 Ckt1997 (IW, OW);
+  TopLevel3002 Ckt3002 (IW, OW);
 
   buffer addedBuf2 (.A(OW[0]), .Y(out0));
 
-endmodule /* Circuit1997 */
+endmodule /* Circuit3002 */

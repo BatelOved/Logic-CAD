@@ -81,14 +81,15 @@ void FECCircuit::setPIO_FF() {
                 hcmNode* ff_node = node_it.second;
                 hcmPort* ff_port = ff_node->getPort();
 
-                hcmInstPort* cell_instPort = inst_it.second->getInstPort(ff_port->getName());
-                hcmNode* cell_node = cell_instPort->getNode();
+                if(ff_node->getName() == "CLK") continue; // TODO Batel - check if it's ok
+
+                if (globalNodes.find(ff_node->getName()) != globalNodes.end()) continue;
 
                 if (ff_port->getDirection() == IN) {
-                    pio[PO].insert(make_pair(inst_it.first + string("_") + ff_node->getName(), cell_node));
+                    pio[PO].insert(make_pair(inst_it.first + string("_") + ff_node->getName() + string("_"), ff_node));
                 }
                 else if (ff_port->getDirection() == OUT) {
-                    pio[PI].insert(make_pair(inst_it.first + string("_") + ff_node->getName(), cell_node));
+                    pio[PI].insert(make_pair(inst_it.first + string("_") + ff_node->getName() + string("_"), ff_node));
                 }
             }
         }
@@ -199,6 +200,7 @@ FEV::FEV(hcmDesign* topDesign, hcmCell* topCell, mapPairPIO map_pair_pi) : topCe
  */
 class FEC {
     Solver*      solver;
+    string       fileName;
 
     hcmDesign*   topDesign;
     hcmCell*     wrapperCell;
@@ -236,11 +238,11 @@ public:
 
     FEC() = delete;
 
-    FEC(Solver* solver, hcmCell* specCell, hcmCell* impCell, set<string>& globalNodes);
+    FEC(Solver* solver, string fileName, hcmCell* specCell, hcmCell* impCell, set<string>& globalNodes);
 
     ~FEC();
 
-    void setPairPIO(PIO& PIO1, PIO& PIO2, mapPairPIO& map_pair_pio);
+    void setPairPIO(PIO& PIO1, PIO& PIO2, mapPairPIO& map_pair_pio, PIO_TYPE type);
 
     void connectPI();
 
@@ -257,10 +259,14 @@ public:
     void setNodesPropTree();
 
     void delNodesPropTree();
+
+    void error(string msg);
+
+    void validCheckPIOs(PIO& PIO1, PIO& PIO2, mapPairPIO& map_pair_pio, PIO_TYPE type);
 };
 
-FEC::FEC(Solver* solver, hcmCell* specCell, hcmCell* impCell, set<string>& globalNodes) : 
-    solver(solver), globalNodes(globalNodes) {
+FEC::FEC(Solver* solver, string fileName, hcmCell* specCell, hcmCell* impCell, set<string>& globalNodes) : 
+    solver(solver), fileName(fileName), globalNodes(globalNodes) {
     
     topDesign   = new hcmDesign("topDesign");
     wrapperCell = topDesign->createCell("wrapperCell");
@@ -273,14 +279,8 @@ FEC::FEC(Solver* solver, hcmCell* specCell, hcmCell* impCell, set<string>& globa
     PIO* specPIO = specCircuit->getPIO();
     PIO* impPIO  = impCircuit->getPIO();
 
-    if (specPIO[PO].size() != impPIO[PO].size()) {
-        // TODO Batel - add that they are not SAT and example for a mismatch
-        cerr << "Error: The number of POs in the spec and imp circuits are different!\n";
-        exit(1);
-    }
-
-    setPairPIO(specPIO[PI], impPIO[PI], map_pair_pio[PI]);
-    setPairPIO(specPIO[PO], impPIO[PO], map_pair_pio[PO]);
+    setPairPIO(specPIO[PI], impPIO[PI], map_pair_pio[PI], PI);
+    setPairPIO(specPIO[PO], impPIO[PO], map_pair_pio[PO], PO);
 
     mapPairPIO map_pair_fev_pi;
 
@@ -312,17 +312,46 @@ FEC::~FEC() {
     delete topDesign;
 }
 
-void FEC::setPairPIO(PIO& PIO1, PIO& PIO2, mapPairPIO& map_pair_pio) {
+void FEC::setPairPIO(PIO& PIO1, PIO& PIO2, mapPairPIO& map_pair_pio, PIO_TYPE type) {
     PIO::const_iterator it1, it2;
 
-    for(it1 = PIO1.begin(), it2 = PIO2.begin(); (it1 != PIO1.end()) && (it2 != PIO2.end()); it1++, it2++) {
-        if (it1->first != it2->first) {
-            // TODO Batel - add that they are not SAT and example for a mismatch
-            cerr << "Error: The POs in the spec and imp circuits are different!\n";
-            exit(1);
+    for(it1 = PIO1.begin(); it1 != PIO1.end(); it1++) {
+        it2 = PIO2.find(it1->first);
+        if(it2 != PIO2.end()) {
+            map_pair_pio.insert(make_pair(it1->first, make_pair(it1->second, it2->second)));
         }
+    }
 
-        map_pair_pio.insert(make_pair(it1->first, make_pair(it1->second, it2->second)));
+    for(it2 = PIO2.begin(); it2 != PIO2.end(); it2++) {
+        if(map_pair_pio.find(it2->first) != map_pair_pio.end()) {
+            continue;
+        }
+        it1 = PIO1.find(it2->first);
+        if(it1 != PIO1.end()) {
+            map_pair_pio.insert(make_pair(it2->first, make_pair(it1->second, it2->second)));
+        }
+    }
+
+    validCheckPIOs(PIO1, PIO2, map_pair_pio, type);
+}
+
+void FEC::error(string msg) {
+    cerr << "Error: " << msg << endl;
+    exit(1);
+}
+
+void FEC::validCheckPIOs(PIO& PIO1, PIO& PIO2, mapPairPIO& map_pair_pio, PIO_TYPE type) {
+    // TODO Batel - add that they are not SAT and example for a mismatch
+    if(map_pair_pio.empty()) {
+        error("The PIs in the spec and imp circuits are completely different!");
+    }
+    if(type == PO) {
+        if(PIO1.size() != PIO2.size()) {
+            error("The number of POs in the spec and imp circuits is different!");
+        }
+        if(PIO1.size() != map_pair_pio.size()) {
+            error("Some of the POs in the spec and imp circuits are different!");
+        }
     }
 }
 
@@ -555,7 +584,7 @@ void FEC::calcFormalEquivalence() {
 
 void FEC::writeToCNF() {
     vec<Lit> tmp;
-    solver->toDimacs("spec-cell.cnf", tmp);
+    solver->toDimacs(fileName.c_str(), tmp);
 }
 
 
@@ -648,8 +677,7 @@ int main(int argc, char** argv) {
 
     //---------------------------------------------------------------------------------//
 
-    FEC fec(&solver, flatSpecCell, flatImpCell, globalNodes);
-    // TODO Batel - add errors handler!!
+    FEC fec(&solver, fileName, flatSpecCell, flatImpCell, globalNodes);
 
     //---------------------------------------------------------------------------------//
 
