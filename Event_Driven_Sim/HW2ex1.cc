@@ -98,28 +98,21 @@ class GateQueue {
 public:
     typedef enum {
         BUFFER, NOT, DFF,
-        OR2, NOR2, AND2, NAND2, XOR2,
-        OR3, NOR3, AND3, NAND3,
-        OR4, NOR4, AND4, NAND4,
-        OR5, NOR5, AND5, NAND5,
-        OR6, NOR6, AND6, NAND6,
-        OR7, NOR7, AND7, NAND7,
-        OR8, NOR8, AND8, NAND8,
-        OR9, NOR9, AND9, NAND9
+        OR, NOR, AND, NAND, XOR
     } GATES;
 
     map<string, GATES> gates_map =
     {
         {"buffer",BUFFER}, {"inv",NOT}, {"not",NOT}, {"dff",DFF},
-        {"or",OR2},  {"nor",NOR2},  {"and",AND2},  {"nand",NAND2},
-        {"or2",OR2}, {"nor2",NOR2}, {"and2",AND2}, {"nand2",NAND2}, {"xor2",XOR2},
-        {"or3",OR3}, {"nor3",NOR3}, {"and3",AND3}, {"nand3",NAND3},
-        {"or4",OR4}, {"nor4",NOR4}, {"and4",AND4}, {"nand4",NAND4},
-        {"or5",OR5}, {"nor5",NOR5}, {"and5",AND5}, {"nand5",NAND5},
-        {"or6",OR6}, {"nor6",NOR6}, {"and6",AND6}, {"nand6",NAND6},
-        {"or7",OR7}, {"nor7",NOR7}, {"and7",AND7}, {"nand7",NAND7},
-        {"or8",OR8}, {"nor8",NOR8}, {"and8",AND8}, {"nand8",NAND8},
-        {"or9",OR9}, {"nor9",NOR9}, {"and9",AND9}, {"nand9",NAND9}
+        {"or",OR},  {"nor",NOR},  {"and",AND},  {"nand",NAND},
+        {"or2",OR}, {"nor2",NOR}, {"and2",AND}, {"nand2",NAND}, {"xor2",XOR},
+        {"or3",OR}, {"nor3",NOR}, {"and3",AND}, {"nand3",NAND},
+        {"or4",OR}, {"nor4",NOR}, {"and4",AND}, {"nand4",NAND},
+        {"or5",OR}, {"nor5",NOR}, {"and5",AND}, {"nand5",NAND},
+        {"or6",OR}, {"nor6",NOR}, {"and6",AND}, {"nand6",NAND},
+        {"or7",OR}, {"nor7",NOR}, {"and7",AND}, {"nand7",NAND},
+        {"or8",OR}, {"nor8",NOR}, {"and8",AND}, {"nand8",NAND},
+        {"or9",OR}, {"nor9",NOR}, {"and9",AND}, {"nand9",NAND}
     };
 
     GateQueue() {}
@@ -136,117 +129,60 @@ public:
     }
 
     bool simulate(hcmInstance* gate, vector<bool> oldGateInputs, vector<bool> gateInputs, bool gate_output) {
+        bool output = false;
+
         switch (gateToEnum(gate->masterCell()->getName())) {
             case BUFFER:
                 return gateInputs[0];
                 break;
+
             case NOT:
                 return !gateInputs[0];
                 break;
+
             case DFF:
                 return gateInputs[0] ? oldGateInputs[1] : gate_output;
                 break;
-            case OR2:
-                return gateInputs[0] || gateInputs[1];
-                break;
-            case NOR2:
-                return !(gateInputs[0] || gateInputs[1]);
-                break;
-            case AND2:
-                return gateInputs[0] && gateInputs[1];
-                break;
-            case NAND2:
-                return !(gateInputs[0] && gateInputs[1]);
-                break;
-            case XOR2:
+
+            case XOR:
                 return gateInputs[0] ^ gateInputs[1];
                 break;
-            case OR3:
-                return gateInputs[0] || gateInputs[1] || gateInputs[2];
+
+            case OR:
+                output = false;
+                for (size_t i = 0; i < gateInputs.size(); i++) {
+                    output = output || gateInputs[i];
+                }
+                return output;
                 break;
-            case NOR3:
-                return !(gateInputs[0] || gateInputs[1] || gateInputs[2]);
+
+            case NOR:
+                output = false;
+                for (size_t i = 0; i < gateInputs.size(); i++) {
+                    output = output || gateInputs[i];
+                }
+                return !output;
                 break;
-            case AND3:
-                return gateInputs[0] && gateInputs[1] && gateInputs[2];
+
+            case AND:
+                output = true;
+                for (size_t i = 0; i < gateInputs.size(); i++) {
+                    output = output && gateInputs[i];
+                }
+                return output;
                 break;
-            case NAND3:
-                return !(gateInputs[0] && gateInputs[1] && gateInputs[2]);
+
+            case NAND:
+                output = true;
+                for (size_t i = 0; i < gateInputs.size(); i++) {
+                    output = output && gateInputs[i];
+                }
+                return !output;
                 break;
-            case OR4:
-                return gateInputs[0] || gateInputs[1] || gateInputs[2] || gateInputs[3];
-                break;
-            case NOR4:
-                return !(gateInputs[0] || gateInputs[1] || gateInputs[2] || gateInputs[3]);
-                break;
-            case AND4:
-                return gateInputs[0] && gateInputs[1] && gateInputs[2] && gateInputs[3];
-                break;
-            case NAND4:
-                return !(gateInputs[0] && gateInputs[1] && gateInputs[2] && gateInputs[3]);
-                break;
-            case OR5:
-                return gateInputs[0] || gateInputs[1] || gateInputs[2] || gateInputs[3] || gateInputs[4];
-                break;
-            case NOR5:
-                return !(gateInputs[0] || gateInputs[1] || gateInputs[2] || gateInputs[3] || gateInputs[4]);
-                break;
-            case AND5:
-                return gateInputs[0] && gateInputs[1] && gateInputs[2] && gateInputs[3] && gateInputs[4];
-                break;
-            case NAND5:
-                return !(gateInputs[0] && gateInputs[1] && gateInputs[2] && gateInputs[3] && gateInputs[4]);
-                break;
-            case OR6:
-                return gateInputs[0] || gateInputs[1] || gateInputs[2] || gateInputs[3] || gateInputs[4] || gateInputs[5];
-                break;
-            case NOR6:
-                return !(gateInputs[0] || gateInputs[1] || gateInputs[2] || gateInputs[3] || gateInputs[4] || gateInputs[5]);
-                break;
-            case AND6:
-                return gateInputs[0] && gateInputs[1] && gateInputs[2] && gateInputs[3] && gateInputs[4] && gateInputs[5];
-                break;
-            case NAND6:
-                return !(gateInputs[0] && gateInputs[1] && gateInputs[2] && gateInputs[3] && gateInputs[4] && gateInputs[5]);
-                break;
-            case OR7:
-                return gateInputs[0] || gateInputs[1] || gateInputs[2] || gateInputs[3] || gateInputs[4] || gateInputs[5] || gateInputs[6];
-                break;
-            case NOR7:
-                return !(gateInputs[0] || gateInputs[1] || gateInputs[2] || gateInputs[3] || gateInputs[4] || gateInputs[5] || gateInputs[6]);
-                break;
-            case AND7:
-                return gateInputs[0] && gateInputs[1] && gateInputs[2] && gateInputs[3] && gateInputs[4] && gateInputs[5] && gateInputs[6];
-                break;
-            case NAND7:
-                return !(gateInputs[0] && gateInputs[1] && gateInputs[2] && gateInputs[3] && gateInputs[4] && gateInputs[5] && gateInputs[6]);
-                break;
-            case OR8:
-                return gateInputs[0] || gateInputs[1] || gateInputs[2] || gateInputs[3] || gateInputs[4] || gateInputs[5] || gateInputs[6] || gateInputs[7];
-                break;
-            case NOR8:
-                return !(gateInputs[0] || gateInputs[1] || gateInputs[2] || gateInputs[3] || gateInputs[4] || gateInputs[5] || gateInputs[6] || gateInputs[7]);
-                break;
-            case AND8:
-                return gateInputs[0] && gateInputs[1] && gateInputs[2] && gateInputs[3] && gateInputs[4] && gateInputs[5] && gateInputs[6] && gateInputs[7];
-                break;
-            case NAND8:
-                return !(gateInputs[0] && gateInputs[1] && gateInputs[2] && gateInputs[3] && gateInputs[4] && gateInputs[5] && gateInputs[6] && gateInputs[7]);
-                break;
-            case OR9:
-                return gateInputs[0] || gateInputs[1] || gateInputs[2] || gateInputs[3] || gateInputs[4] || gateInputs[5] || gateInputs[6] || gateInputs[7] || gateInputs[8];
-                break;
-            case NOR9:
-                return !(gateInputs[0] || gateInputs[1] || gateInputs[2] || gateInputs[3] || gateInputs[4] || gateInputs[5] || gateInputs[6] || gateInputs[7] || gateInputs[8]);
-                break;
-            case AND9:
-                return gateInputs[0] && gateInputs[1] && gateInputs[2] && gateInputs[3] && gateInputs[4] && gateInputs[5] && gateInputs[6] && gateInputs[7] && gateInputs[8];
-                break;
-            case NAND9:
-                return !(gateInputs[0] && gateInputs[1] && gateInputs[2] && gateInputs[3] && gateInputs[4] && gateInputs[5] && gateInputs[6] && gateInputs[7] && gateInputs[8]);
-                break;
+
             default:
-                assert(false);
+                cerr << "ERROR: Gate in not supported by the simulator" << endl;
+                exit(0);
                 break;
         }
         return true;

@@ -96,10 +96,10 @@ From Event_Driven_Sim directory, run `make`.
 * `./event_sim shiftRegDifCLK tests/shiftRegDifCLK.sig.txt tests/shiftRegDifCLK.vec.txt stdcell.v tests/shiftRegDifCLK.v`
 
 #### - Using Level-Gate Implementation DFF:
-* `./event_sim TopLevel2806 tests/c2806.sig.txt tests/c2806.vec.txt stdcell_DFF.v tests/c2806.v`
-* `./event_sim TopLevel3540 tests/c3540.sig.txt tests/c3540.vec.txt stdcell_DFF.v tests/c3540.v`
-* `./event_sim shiftReg tests/shiftReg.sig.txt tests/shiftReg.vec.txt stdcell_DFF.v tests/shiftReg.v`
-* `./event_sim shiftRegDifCLK tests/shiftRegDifCLK.sig.txt tests/shiftRegDifCLK.vec.txt stdcell_DFF.v tests/shiftRegDifCLK.v`
+* `./event_sim TopLevel2806 tests/c2806.sig.txt tests/c2806.vec.txt stdcell_FF.v tests/c2806.v`
+* `./event_sim TopLevel3540 tests/c3540.sig.txt tests/c3540.vec.txt stdcell_FF.v tests/c3540.v`
+* `./event_sim shiftReg tests/shiftReg.sig.txt tests/shiftReg.vec.txt stdcell_FF.v tests/shiftReg.v`
+* `./event_sim shiftRegDifCLK tests/shiftRegDifCLK.sig.txt tests/shiftRegDifCLK.vec.txt stdcell_FF.v tests/shiftRegDifCLK.v`
 
 ## Example
 Circuit c2806.v implementation:
