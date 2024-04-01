@@ -81,7 +81,7 @@ void FECCircuit::setPIO_FF() {
                 hcmNode* ff_node = node_it.second;
                 hcmPort* ff_port = ff_node->getPort();
 
-                if(ff_node->getName() == "CLK") continue; // TODO Batel - check if it's ok
+                //if (ff_node->getName() == "CLK") continue; // TODO Batel - check if it's ok
 
                 if (globalNodes.find(ff_node->getName()) != globalNodes.end()) continue;
 
@@ -388,6 +388,7 @@ void FEC::setNodesPropTree() {
     int i = 0;
 
     for (auto it : flatWrapperCell->getNodes()) {
+        //cout << "Node name: " << it.first << ", Val: " << i+1 << endl; // TODO Batel - remove
         assert(it.second->setProp<int>("SolverVar", i++) == OK);
         solver->newVar();
     }
@@ -403,7 +404,6 @@ void FEC::calcTseitin(hcmInstance* inst) {
     vec<Lit> lits;
     map<std::string, hcmInstPort*>& instPorts = inst->getInstPorts();
     vector<int> solverVar_inputs, solverVar_outputs;
-    int nVar = solver->nVars();
 
     for (auto it : instPorts) {
         hcmInstPort* instPort = it.second;
@@ -447,6 +447,8 @@ void FEC::calcTseitin(hcmInstance* inst) {
             break;
 
         case DFF:
+            // TODO Batel - add clause for the connected nodes
+
             break;
 
         case XOR:
@@ -540,7 +542,7 @@ void FEC::calcTseitin(hcmInstance* inst) {
             break;
 
         default:
-            assert(false);
+            error("Gate in not supported by the simulator");
             break;
     }
 }
@@ -585,6 +587,20 @@ void FEC::calcFormalEquivalence() {
 void FEC::writeToCNF() {
     vec<Lit> tmp;
     solver->toDimacs(fileName.c_str(), tmp);
+
+    // TODO Batel - check SAT in between some parts, and add prints in error cases for mismatch vector
+
+    vec<Lit> dummy;
+    lbool ret = solver->solveLimited(dummy);
+
+    if (ret == l_True) {
+        for (int i = 0; i < solver->nVars(); i++) {
+            if (solver->model[i] != l_Undef) {
+                printf("%s%s%d", (i==0) ? "" : " ", (solver->model[i]==l_True) ? "" : "-", i+1);
+            }
+        }
+        printf(" 0\n");
+    }
 }
 
 

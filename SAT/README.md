@@ -29,6 +29,9 @@ Expected output: SATISFIABLE! (non-equivalent circuits)
 * `./gl_verilog_fev -s TopLevel3000 stdcell.v tests/c3000.v -i TopLevel3004 stdcell.v tests/c3004.v`\
 Expected output: SATISFIABLE! (non-equivalent circuits)
 
+* `./gl_verilog_fev -s TopLevel4000 stdcell.v tests/c4000.v -i TopLevel4001 stdcell.v tests/c4001.v`\
+Expected output: NOT SATISFIABLE! (equivalent circuits)
+
 * `./gl_verilog_fev -s TopLevel1355 stdcell.v tests/c1355.v -i TopLevel1356 stdcell.v tests/c1356.v`\
 Expected output: NOT SATISFIABLE! (equivalent circuits)
 
