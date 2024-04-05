@@ -18,13 +18,35 @@
 using namespace std;
 using namespace Minisat;
 
+/**
+ * @brief Enumeration for Primary Input/Output types
+ */
 typedef enum {PI, PO} PIO_TYPE;
-typedef map<string, hcmNode*> PIO; // Primary Inputs\Outputs
+
+/**
+ * @brief Map to hold Primary Inputs/Outputs (PIO) with string keys and hcmNode* values
+ */
+typedef map<string, hcmNode*> PIO;
+
+/**
+ * @brief Map to hold flip-flops (FF) with string keys and hcmInstance* values
+ */
 typedef map<string, hcmInstance*> mapFF;
+
+/**
+ * @brief Map to hold pairs of hcmNode* with string keys
+ */
 typedef map<string, pair<hcmNode*,hcmNode*>> mapPairPIO;
+
+/**
+ * @brief Map to hold pairs of hcmInstance* with string keys
+ */
 typedef map<string, pair<hcmInstance*,hcmInstance*>> mapPairFF;
 
 
+/**
+ * @brief Class representing a Formal Equivalence Checking (FEC) Circuit
+ */
 class FECCircuit {
     hcmCell*     topCell;
     hcmCell*     cell;
@@ -34,24 +56,54 @@ class FECCircuit {
     set<string>  globalNodes;
 
 public:
+    /**
+     * @brief Deleted default constructor
+     */
     FECCircuit() = delete;
 
+    /**
+     * @brief Constructor that initializes the FECCircuit with a top cell, a cell, and a set of global nodes
+     */
     FECCircuit(hcmCell* topCell, hcmCell* cell, set<string>& globalNodes);
 
+    /**
+     * @brief Destructor
+     */
     ~FECCircuit() {}
 
+    /**
+     * @brief Method to set the Primary Inputs\Outputs (PIO)
+     */
     void setPIO();
 
+    /**
+     * @brief Method to set the flip-flops (FF)
+     */
     void setFF();
 
+    /**
+     * @brief Getter for the top cell
+     */
     hcmCell* getTopCell() { return topCell; }
 
+    /**
+     * @brief Getter for the cell
+     */
     hcmCell* getCell() { return cell; }
 
+    /**
+     * @brief Getter for the instance
+     */
     hcmInstance* getInst() { return inst; }
 
+    /**
+     * @brief Getter for the Primary Inputs\Outputs (PIO)
+     */
     PIO* getPIO() { return pio; }
 
+    /**
+     * @brief Getter for the map of flip-flops
+     */
     mapFF& getMapFF() { return mapFFs; }
 };
 
@@ -98,6 +150,10 @@ void FECCircuit::setFF() {
 }
 
 
+/**
+ * @brief Class FEV represents a functional equivalence verification (FEV) object.
+ * It contains a top cell, a cell, an instance, and a top cell output port.
+ */
 class FEV {
     hcmCell*     topCell;
     hcmCell*     cell;
@@ -105,19 +161,54 @@ class FEV {
     hcmPort*     topCell_out_port;
 
 public:
+    /**
+     * @brief Deleted default constructor.
+     */
     FEV() = delete;
 
+    /**
+     * @brief Construct a new FEV object.
+     * 
+     * @param topDesign Top design of the FEV
+     * @param topCell Top cell of the FEV
+     * @param map_pair_pi Map pair of primary inputs
+     */
     FEV(hcmDesign* topDesign, hcmCell* topCell, mapPairPIO map_pair_pi);
 
+    /**
+     * @brief Destroy the FEV object.
+     */
     ~FEV() {}
 
+    /**
+     * @brief Get the Cell object.
+     * 
+     * @return hcmCell* Cell of the FEV
+     */
     hcmCell* getCell() { return cell; }
 
+    /**
+     * @brief Get the Instance object.
+     * 
+     * @return hcmInstance* Instance of the FEV
+     */
     hcmInstance* getInst() { return inst; }
 
+    /**
+     * @brief Get the Top Cell Out Port object.
+     * 
+     * @return hcmPort* Output port of the top cell
+     */
     hcmPort* getTopCellOutPort() { return topCell_out_port; }
 };
 
+/**
+ * @brief Construct a new FEV object.
+ * 
+ * @param topDesign Top design of the FEV
+ * @param topCell Top cell of the FEV
+ * @param map_pair_pi Map pair of primary inputs
+ */
 FEV::FEV(hcmDesign* topDesign, hcmCell* topCell, mapPairPIO map_pair_pi) : topCell(topCell) {
     cell = topDesign->createCell("fevCell");
     inst = topCell->createInst(string("inst_") + cell->getName(), cell);
@@ -219,11 +310,17 @@ class FEC {
     hcmCell*     flatWrapperCell;
 
 public:
+    /**
+     * @brief Enumeration for different gate types.
+     */
     typedef enum {
         BUFFER, NOT, DFF,
         OR, NOR, AND, NAND, XOR
     } GATES;
 
+    /**
+     * @brief Map to hold gate names and their corresponding enumeration value.
+     */
     map<string, GATES> gates_map =
     {
         {"buffer",BUFFER}, {"inv",NOT}, {"not",NOT}, {"dff",DFF},
@@ -240,43 +337,123 @@ public:
 
     FEC() = delete;
 
+    /**
+     * @brief Construct a new FEC object.
+     * 
+     * @param solver SAT solver
+     * @param fileName Name of the file
+     * @param specCell Specification cell
+     * @param impCell Implementation cell
+     * @param globalNodes Set of global nodes
+     */
     FEC(Solver* solver, string fileName, hcmCell* specCell, hcmCell* impCell, set<string>& globalNodes);
 
+    /**
+     * @brief Destroy the FEC object.
+     */
     ~FEC();
 
+    /**
+     * @brief Set the pair of Primary Input/Output (PIO) nodes.
+     * 
+     * @param PIO1 First PIO map
+     * @param PIO2 Second PIO map
+     * @param map_pair_pio Map pair of PIO nodes
+     * @param type PIO type (PI or PO)
+     */
     void setPairPIO(PIO& PIO1, PIO& PIO2, mapPairPIO& map_pair_pio, PIO_TYPE type);
 
+    /**
+     * @brief Set the pair of flip-flop (FF) instances.
+     */
     void setPairInst_FF();
 
+    /**
+     * @brief Connect the Primary Inputs (PI) nodes.
+     */
     void connectPI();
 
+    /**
+     * @brief Connect the Primary Outputs (PO) nodes.
+     * 
+     * @param map_pair_fev_pi Map pair of FEV and PIO nodes
+     */
     void connectPO(mapPairPIO& map_pair_fev_pi);
 
+    /**
+     * @brief Calculate the formal equivalence between the specification and implementation circuits.
+     */
     void calcFormalEquivalence();
 
+    /**
+     * @brief Calculate the Tseitin transformation for a given instance.
+     * 
+     * @param inst Instance to calculate Tseitin transformation for
+     */
     void calcTseitin(hcmInstance* inst);
 
+    /**
+     * @brief Write the formal equivalence constraints to CNF format.
+     */
     void writeToCNF();
 
+    /**
+     * @brief Convert gate name to its corresponding enumeration value.
+     * 
+     * @param gateName Name of the gate
+     * @return GATES Enumeration value of the gate
+     */
     GATES gateToEnum(string gateName) { return gates_map.find(gateName)->second; }
 
+    /**
+     * @brief Set the properties of the nodes in the circuit.
+     */
     void setNodesPropTree();
 
+    /**
+     * @brief Delete the properties of the nodes in the circuit.
+     */
     void delNodesPropTree();
 
+    /**
+     * @brief Print the input assignments.
+     */
+    void printInputAssign();
+
+    /**
+     * @brief Handle error messages.
+     * 
+     * @param msg Error message
+     */
     void error(string msg);
 
+    /**
+     * @brief Perform valid check on the Primary Input/Output (PIO) nodes.
+     * 
+     * @param PIO1 First PIO map
+     * @param PIO2 Second PIO map
+     */
     void validCheckPIOs(PIO* PIO1, PIO* PIO2);
 
+    /**
+     * @brief Set the output clause for the SAT solver.
+     */
     void setOutputClause();
 
+    /**
+     * @brief Set the global nodes clause for the SAT solver.
+     */
     void setGlobalNodesClause();
 
+    /**
+     * @brief Set the flip-flop output equal to solver variable clause for the SAT solver.
+     */
     void setFFOutputEqualSolverVar();
-
+    
+    /**
+     * @brief Set the flip-flop input equal to solver variable clause for the SAT solver.
+     */
     void setFFInputEqualSolverVar();
-
-    void printInputAssign();
 };
 
 FEC::FEC(Solver* solver, string fileName, hcmCell* specCell, hcmCell* impCell, set<string>& globalNodes) : 

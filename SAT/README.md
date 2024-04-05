@@ -1,7 +1,7 @@
 # SAT-based Gate Level Formal Equivalence Checker 
 
 ## Overview
-`TODO`
+Formal Equivalence Verification (FEV) provides a key technology that enables comparing the RTL to the synthesized gate-level or multiple different gate-level implementations to each other. In recent years, BDDs which were the cornerstone of formal models and FEV was replaced by SAT solvers to resolve the capacity limitations of BDDs.
 
 ## How to Run
 
