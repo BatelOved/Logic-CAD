@@ -20,7 +20,9 @@ using namespace Minisat;
 
 typedef enum {PI, PO} PIO_TYPE;
 typedef map<string, hcmNode*> PIO; // Primary Inputs\Outputs
+typedef map<string, hcmInstance*> mapFF;
 typedef map<string, pair<hcmNode*,hcmNode*>> mapPairPIO;
+typedef map<string, pair<hcmInstance*,hcmInstance*>> mapPairFF;
 
 
 class FECCircuit {
@@ -28,6 +30,7 @@ class FECCircuit {
     hcmCell*     cell;
     hcmInstance* inst;
     PIO          pio[2];
+    mapFF        mapFFs;
     set<string>  globalNodes;
 
 public:
@@ -39,7 +42,7 @@ public:
 
     void setPIO();
 
-    void setPIO_FF();
+    void setFF();
 
     hcmCell* getTopCell() { return topCell; }
 
@@ -48,12 +51,15 @@ public:
     hcmInstance* getInst() { return inst; }
 
     PIO* getPIO() { return pio; }
+
+    mapFF& getMapFF() { return mapFFs; }
 };
 
 FECCircuit::FECCircuit(hcmCell* topCell, hcmCell* cell, set<string>& globalNodes) : topCell(topCell), cell(cell), globalNodes(globalNodes) {
     inst = topCell->createInst(string("inst_") + cell->getName(), cell);
 
     setPIO();
+    setFF();
 }
 
 void FECCircuit::setPIO() {
@@ -69,30 +75,25 @@ void FECCircuit::setPIO() {
             pio[PO].insert(make_pair(node->getName(), node));
         }
     }
-
-    setPIO_FF();
 }
 
-void FECCircuit::setPIO_FF() {
+void FECCircuit::setFF() {
     for (auto inst_it : cell->getInstances()) {
         hcmCell* currCell = inst_it.second->masterCell();
-        if (currCell->getName() == "dff") {
-            for (auto node_it : currCell->getNodes()) {
-                hcmNode* ff_node = node_it.second;
-                hcmPort* ff_port = ff_node->getPort();
 
-                //if (ff_node->getName() == "CLK") continue; // TODO Batel - check if it's ok
+        if (currCell->getName() != "dff") continue;
 
-                if (globalNodes.find(ff_node->getName()) != globalNodes.end()) continue;
+        for (auto instPort_it : inst_it.second->getInstPorts()) {
+            hcmInstPort *instPort = instPort_it.second;
 
-                if (ff_port->getDirection() == IN) {
-                    pio[PO].insert(make_pair(inst_it.first + string("_") + ff_node->getName() + string("_"), ff_node));
-                }
-                else if (ff_port->getDirection() == OUT) {
-                    pio[PI].insert(make_pair(inst_it.first + string("_") + ff_node->getName() + string("_"), ff_node));
-                }
-            }
+            if (instPort->getPort()->getName() != "D") continue;
+
+            hcmNode* FF_D_node = cell->createNode(inst_it.first + string("_D"));
+            FF_D_node->createPort(OUT);
+            pio[PO].insert(make_pair(FF_D_node->getName(), FF_D_node));
         }
+
+        mapFFs.insert(make_pair(inst_it.first, inst_it.second));
     }
 }
 
@@ -213,6 +214,7 @@ class FEC {
 
     set<string>  globalNodes;
     mapPairPIO   map_pair_pio[2];
+    mapPairFF    map_pair_FF_flatten;
 
     hcmCell*     flatWrapperCell;
 
@@ -244,6 +246,8 @@ public:
 
     void setPairPIO(PIO& PIO1, PIO& PIO2, mapPairPIO& map_pair_pio, PIO_TYPE type);
 
+    void setPairInst_FF();
+
     void connectPI();
 
     void connectPO(mapPairPIO& map_pair_fev_pi);
@@ -262,7 +266,17 @@ public:
 
     void error(string msg);
 
-    void validCheckPIOs(PIO& PIO1, PIO& PIO2, mapPairPIO& map_pair_pio, PIO_TYPE type);
+    void validCheckPIOs(PIO* PIO1, PIO* PIO2);
+
+    void setOutputClause();
+
+    void setGlobalNodesClause();
+
+    void setFFOutputEqualSolverVar();
+
+    void setFFInputEqualSolverVar();
+
+    void printInputAssign();
 };
 
 FEC::FEC(Solver* solver, string fileName, hcmCell* specCell, hcmCell* impCell, set<string>& globalNodes) : 
@@ -296,20 +310,56 @@ FEC::FEC(Solver* solver, string fileName, hcmCell* specCell, hcmCell* impCell, s
 
     flatWrapperCell = hcmFlatten("FEC_flat", wrapperCell, globalNodes);
 
+    setPairInst_FF();
+
+    validCheckPIOs(specPIO, impPIO);
+
     setNodesPropTree();
 
     calcFormalEquivalence();
-
-    delNodesPropTree();
 
     writeToCNF();
 }
 
 FEC::~FEC() {
+    delNodesPropTree();
     delete fev;
     delete impCircuit;
     delete specCircuit;
     delete topDesign;
+}
+
+void FEC::setPairInst_FF() {
+    mapFF::const_iterator it1, it2;
+    mapPairFF map_pair_FF;
+
+    mapFF& mapFF1 = specCircuit->getMapFF();
+    mapFF& mapFF2 = impCircuit->getMapFF();
+
+    if (mapFF1.size() != mapFF2.size()) {
+        error("The FFs in the spec and imp circuits are different!");
+    }
+
+    for (it1 = mapFF1.begin(), it2 = mapFF2.begin(); it1 != mapFF1.end() && it2 != mapFF2.end(); it1++, it2++) {
+        if (it1->first != it2->first) {
+            error("The FFs in the spec and imp circuits are different!");
+        }
+        map_pair_FF.insert(make_pair(it1->first, make_pair(it1->second, it2->second)));
+    }
+
+    for (auto it : flatWrapperCell->getInstances()) {
+        string full_inst_name = it.first;
+        string inst_name = full_inst_name.substr(full_inst_name.find_last_of('/') + 1);
+        if (map_pair_FF.find(inst_name) != map_pair_FF.end()) {
+            mapPairFF::iterator map_pair_it = map_pair_FF_flatten.find(inst_name);
+            if (map_pair_it == map_pair_FF_flatten.end()) {
+                map_pair_FF_flatten.insert(make_pair(inst_name, make_pair(it.second, nullptr)));
+            }
+            else {
+                map_pair_it->second.second = it.second;
+            }
+        }
+    }
 }
 
 void FEC::setPairPIO(PIO& PIO1, PIO& PIO2, mapPairPIO& map_pair_pio, PIO_TYPE type) {
@@ -331,27 +381,44 @@ void FEC::setPairPIO(PIO& PIO1, PIO& PIO2, mapPairPIO& map_pair_pio, PIO_TYPE ty
             map_pair_pio.insert(make_pair(it2->first, make_pair(it1->second, it2->second)));
         }
     }
-
-    validCheckPIOs(PIO1, PIO2, map_pair_pio, type);
 }
 
 void FEC::error(string msg) {
-    cerr << "Error: " << msg << endl;
+    cout << endl;
+    cout << "Error: " << msg << endl;
+    cout << "The Circuits Are Not Equivalent!" << endl;
+    if(map_pair_pio[PI].empty()) {
+        cout << "Input Assignment Vector Example: " << endl;
+        for (auto it : specCircuit->getCell()->getNodes()) {
+            string nodeName = it.first;
+            hcmNode* node = it.second;
+            cout << "Instance name: " << specCircuit->getInst()->getName() << endl;
+            if (node->getPort() != nullptr && node->getPort()->getDirection() == IN) {
+                cout << "Node name: " << nodeName << ", Assignment: 0" << endl;
+            }
+            cout << endl;
+        }
+        for (auto it : impCircuit->getCell()->getNodes()) {
+            string nodeName = it.first;
+            hcmNode* node = it.second;
+            cout << "Instance name: " << specCircuit->getInst()->getName() << endl;
+            if (node->getPort() != nullptr && node->getPort()->getDirection() == IN) {
+                cout << "Node name: " << nodeName << ", Assignment: 0" << endl;
+            }
+            cout << endl;
+        }
+    }
+    cout << endl;
+    cout << "SATISFIABLE!" << endl;
     exit(1);
 }
 
-void FEC::validCheckPIOs(PIO& PIO1, PIO& PIO2, mapPairPIO& map_pair_pio, PIO_TYPE type) {
-    // TODO Batel - add that they are not SAT and example for a mismatch
-    if(map_pair_pio.empty()) {
-        error("The PIs in the spec and imp circuits are completely different!");
+void FEC::validCheckPIOs(PIO* PIO1, PIO* PIO2) {
+    if(map_pair_pio[PI].empty()) {
+        error("The inputs of the spec and imp circuits are completely different!");
     }
-    if(type == PO) {
-        if(PIO1.size() != PIO2.size()) {
-            error("The number of POs in the spec and imp circuits is different!");
-        }
-        if(PIO1.size() != map_pair_pio.size()) {
-            error("Some of the POs in the spec and imp circuits are different!");
-        }
+    if((PIO1[PO].size() != PIO2[PO].size()) || (PIO1[PO].size() != map_pair_pio[PO].size())) {
+        error("The outputs of the spec and imp circuits are different!");
     }
 }
 
@@ -388,9 +455,44 @@ void FEC::setNodesPropTree() {
     int i = 0;
 
     for (auto it : flatWrapperCell->getNodes()) {
-        //cout << "Node name: " << it.first << ", Val: " << i+1 << endl; // TODO Batel - remove
         assert(it.second->setProp<int>("SolverVar", i++) == OK);
         solver->newVar();
+    }
+}
+
+void FEC::printInputAssign() {
+    int solverVar;
+    vector<pair<string,int>> solverVars;
+
+    for (auto it : flatWrapperCell->getNodes()) {
+        string nodeName = it.first;
+        hcmNode* node = it.second;
+        if (node->getPort() != nullptr && node->getPort()->getDirection() == IN) {
+            assert(node->getProp<int>("SolverVar", solverVar) == OK);
+            string prefix = "FEC_PI_";
+            size_t pos = nodeName.find(prefix);
+            string inputNodeName = nodeName.substr(pos + prefix.size());
+            solverVars.push_back(make_pair(inputNodeName,solverVar));
+        }
+    }
+
+    vec<Lit> dummy;
+    lbool ret = solver->solveLimited(dummy);
+
+    if (ret == l_True) {
+        cout << endl;
+        cout << "The Circuits Are Not Equivalent!" << endl; 
+        cout << "Input Assignment Vector Example: " << endl;
+        for (auto it : solverVars) {
+            string nodeName = it.first;
+            int solverVar = it.second;
+            if (solver->model[solverVar] != l_Undef) {
+                string assign = solver->model[solverVar]==l_True ? "1" : "0";
+                cout << "Node name: " << nodeName << ", Solver value: " << solverVar+1 << ", Assignment: " << assign << endl;
+            }
+        }
+        cout << "All Other Inputs Are Set To 0" << endl;
+        cout << endl;
     }
 }
 
@@ -447,8 +549,6 @@ void FEC::calcTseitin(hcmInstance* inst) {
             break;
 
         case DFF:
-            // TODO Batel - add clause for the connected nodes
-
             break;
 
         case XOR:
@@ -542,16 +642,13 @@ void FEC::calcTseitin(hcmInstance* inst) {
             break;
 
         default:
-            error("Gate in not supported by the simulator");
+            cerr << "Error: Gate in not supported by the simulator" << endl;
+            exit(1);
             break;
     }
 }
 
-void FEC::calcFormalEquivalence() {
-    for (auto inst_it : flatWrapperCell->getInstances()) {
-        calcTseitin(inst_it.second);
-    }
-
+void FEC::setOutputClause() {
     vec<Lit> lits;
 
     for (auto it : flatWrapperCell->getNodes()) {
@@ -565,42 +662,111 @@ void FEC::calcFormalEquivalence() {
                 lits.push(mkLit(solverVar));
                 assert(solver->addClause(lits));
             }
-            else if (port->getDirection() == IN) {
-                string nodeName = node->getName();
-                if (globalNodes.find(nodeName) != globalNodes.end()) {
-                    lits.clear();
-                    int solverVar;
-                    assert(node->getProp<int>("SolverVar", solverVar) == OK);
-                    if (nodeName == "VDD") {
-                        lits.push(mkLit(solverVar));
-                    }
-                    else if (nodeName == "VSS") {
-                        lits.push(~mkLit(solverVar));
-                    }
-                    assert(solver->addClause(lits));
-                }
-            }
         }
     }
+}
+
+void FEC::setGlobalNodesClause() {
+    vec<Lit> lits;
+    
+    for (auto it : flatWrapperCell->getNodes()) {
+        hcmNode* node = it.second;
+        string nodeName = node->getName();
+        if (globalNodes.find(nodeName) != globalNodes.end()) {
+            lits.clear();
+            int solverVar;
+            assert(node->getProp<int>("SolverVar", solverVar) == OK);
+            if (nodeName == "VDD") {
+                lits.push(mkLit(solverVar));
+            }
+            else if (nodeName == "VSS") {
+                lits.push(~mkLit(solverVar));
+            }
+            assert(solver->addClause(lits));
+        }
+    }
+}
+
+void FEC::setFFOutputEqualSolverVar() {
+    for (auto it : map_pair_FF_flatten) {
+        pair<hcmInstance*, hcmInstance*> pair_insts = it.second;
+        map<std::string, hcmInstPort*>& spec_instPorts = pair_insts.first->getInstPorts();
+        map<std::string, hcmInstPort*>& imp_instPorts  = pair_insts.second->getInstPorts();
+        hcmNode* node_spec = nullptr;
+        hcmNode* node_imp = nullptr;
+
+        map<std::string, hcmInstPort*>::const_iterator it1, it2;
+
+        for(it1 = spec_instPorts.begin(), it2 = imp_instPorts.begin(); it1 != spec_instPorts.end() && it2 != imp_instPorts.end(); it1++, it2++) {
+            if (it1->second->getPort() != nullptr && it1->second->getPort()->getDirection() == OUT) {
+                node_spec = it1->second->getNode();
+            }
+            if (it2->second->getPort() != nullptr && it2->second->getPort()->getDirection() == OUT) {
+                node_imp = it2->second->getNode();
+            }
+        }
+
+        int solverVar_spec, solverVar_imp;
+        assert(node_spec->getProp<int>("SolverVar", solverVar_spec) == OK);
+        assert(node_imp->getProp<int>("SolverVar", solverVar_imp) == OK);
+
+        int min_solverVar = min(solverVar_spec, solverVar_imp);
+        assert(node_spec->setProp<int>("SolverVar", min_solverVar) == OK);
+        assert(node_imp->setProp<int>("SolverVar", min_solverVar) == OK);
+    }
+}
+
+void FEC::setFFInputEqualSolverVar() {
+    for (auto it : map_pair_FF_flatten) {
+        string FF_name = it.first;
+        pair<hcmInstance*, hcmInstance*> pair_insts = it.second;
+        map<std::string, hcmInstPort*>& spec_instPorts = pair_insts.first->getInstPorts();
+        map<std::string, hcmInstPort*>& imp_instPorts  = pair_insts.second->getInstPorts();
+
+        for (auto instPort_it : spec_instPorts) {
+            hcmInstPort* instPort = instPort_it.second;
+
+            if (instPort->getPort()->getName() != "D") continue;
+
+            hcmNode* FF_D_node = instPort->getNode();
+            hcmNode* XOR_node  = flatWrapperCell->getNode(topInst->getName() + string("/PO_spec_") + FF_name + string("_D"));
+
+            int solverVar;
+            assert(FF_D_node->getProp<int>("SolverVar", solverVar) == OK);
+            assert(XOR_node->setProp<int>("SolverVar", solverVar) == OK);
+        }
+
+        for (auto instPort_it : imp_instPorts) {
+            hcmInstPort* instPort = instPort_it.second;
+
+            if (instPort->getPort()->getName() != "D") continue;
+
+            hcmNode* FF_D_node = instPort->getNode();
+            hcmNode* XOR_node  = flatWrapperCell->getNode(topInst->getName() + string("/PO_imp_") + FF_name + string("_D"));
+
+            int solverVar;
+            assert(FF_D_node->getProp<int>("SolverVar", solverVar) == OK);
+            assert(XOR_node->setProp<int>("SolverVar", solverVar) == OK);
+        }
+    }
+}
+
+void FEC::calcFormalEquivalence() {
+
+    setFFOutputEqualSolverVar();
+    setFFInputEqualSolverVar();
+
+    for (auto inst_it : flatWrapperCell->getInstances()) {
+        calcTseitin(inst_it.second);
+    }
+
+    setOutputClause();
+    setGlobalNodesClause();
 }
 
 void FEC::writeToCNF() {
     vec<Lit> tmp;
     solver->toDimacs(fileName.c_str(), tmp);
-
-    // TODO Batel - check SAT in between some parts, and add prints in error cases for mismatch vector
-
-    vec<Lit> dummy;
-    lbool ret = solver->solveLimited(dummy);
-
-    if (ret == l_True) {
-        for (int i = 0; i < solver->nVars(); i++) {
-            if (solver->model[i] != l_Undef) {
-                printf("%s%s%d", (i==0) ? "" : " ", (solver->model[i]==l_True) ? "" : "-", i+1);
-            }
-        }
-        printf(" 0\n");
-    }
 }
 
 
@@ -699,6 +865,7 @@ int main(int argc, char** argv) {
 
     bool sat = solver.solve();
     if (sat) {
+        fec.printInputAssign();
         cout << "SATISFIABLE!" << endl;
     }
     else {
